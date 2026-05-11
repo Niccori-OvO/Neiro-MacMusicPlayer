@@ -1,2 +1,4 @@
 # Neiro-MacMusicPlayer
-一个Mac Platform音乐播放器
+
+一个 Mac Platform 音乐播放器。
+
