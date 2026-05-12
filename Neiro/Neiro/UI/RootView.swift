@@ -13,31 +13,87 @@ public enum NavigationDestination: Hashable {
     case albums
     case artists
     case playlists
+    /// 指向某个具体 playlist 的页面（Phase 2 内容会接，骨架先打通）
+    case playlist(UUID)
 }
 
 struct RootView: View {
     @Environment(AudioEngine.self) private var engine
     @Environment(LibraryService.self) private var library
+    @Environment(AppRouter.self) private var router
     @Environment(\.openWindow) private var openWindow
-    @State private var selection: NavigationDestination? = .home
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            Sidebar(selection: $selection)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
-        } detail: {
-            MainContent(selection: selection)
-        }
-        .navigationSplitViewStyle(.balanced)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            PlayerBar()
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.ultraThinMaterial)
-                .overlay(alignment: .top) {
-                    Divider().opacity(0.5)
+        @Bindable var router = router
+        ZStack {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                Sidebar(selection: $router.selection)
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
+            } detail: {
+                HStack(spacing: 0) {
+                    MainContent(selection: router.selection)
+                    if router.isLyricsPresented {
+                        LyricsPanel()
+                            .frame(width: 320)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
                 }
+            }
+            .navigationSplitViewStyle(.balanced)
+            .toolbar {
+                // 左侧：导入按钮，紧贴 sidebar toggle
+                ToolbarItemGroup(placement: .navigation) {
+                    Button {
+                        openWindow(id: "import")
+                    } label: {
+                        Label("导入", systemImage: "tray.and.arrow.down")
+                    }
+                    .help("导入音乐 (⌘O)")
+                }
+                // 右侧：歌词 + 正在播放，让顶部左右平衡
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button {
+                        router.toggleLyrics()
+                    } label: {
+                        Label("歌词", systemImage: "text.bubble")
+                            .symbolVariant(router.isLyricsPresented ? .fill : .none)
+                    }
+                    .help("歌词面板")
+                    .disabled(engine.currentURL == nil)
+
+                    Button {
+                        if engine.currentURL != nil {
+                            router.presentNowPlaying()
+                        }
+                    } label: {
+                        Label("正在播放", systemImage: "play.square")
+                    }
+                    .help("打开播放详情")
+                    .disabled(engine.currentURL == nil)
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                PlayerBar()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background {
+                        ZStack {
+                            Rectangle().fill(.ultraThinMaterial)
+                            Rectangle().fill(Color.accentColor.opacity(0.08))
+                        }
+                    }
+                    .overlay(alignment: .top) {
+                        Divider().opacity(0.5)
+                    }
+            }
+
+            // 全屏 Now Playing overlay
+            if router.isNowPlayingPresented {
+                NowPlayingView()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(10)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .neiroOpenImport)) { _ in
             openWindow(id: "import")
@@ -71,26 +127,37 @@ struct AccentTintedBackground: View {
 // MARK: - Main content switch
 
 private struct MainContent: View {
+    // 修复 Bug：加上 '?' 将其声明为可选类型，以接收调用方传来的可选值
     let selection: NavigationDestination?
 
     var body: some View {
-        ZStack {
-            AccentTintedBackground()
-
-            Group {
-                switch selection {
-                case .home:      HomeView()
-                case .songs:     SongsView()
-                case .albums:    AlbumsView()
-                case .artists:   ArtistsView()
-                case .playlists: PlaylistsView()
-                case .none:      HomeView()
-                }
+        Group {
+            switch selection {
+            case .home:
+                HomeView()
+            case .songs:
+                SongsView()
+            case .albums:
+                AlbumsView()
+            case .artists:
+                ArtistsView()
+            case .playlists:
+                PlaylistsView()
+            case .playlist(let id):
+                PlaylistDetailView(playlistID: id)
+            case .none:
+                HomeView()
             }
-            // 仅做内容淡入淡出，不影响外层 NavigationSplitView 的几何动画
-            .transition(.opacity)
-            .animation(.easeInOut(duration: 0.15), value: selection)
         }
+        .id(selection)
+        // 仅做内容淡入淡出...
+        .transition(.opacity)
+        .animation(.easeInOut(duration: 0.15), value: selection)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 把背景直接当成壁纸贴在最后面，并且让它无视安全区域铺满整个屏幕边缘
+        .background {
+            AccentTintedBackground()
+                .ignoresSafeArea()
+        }
     }
 }

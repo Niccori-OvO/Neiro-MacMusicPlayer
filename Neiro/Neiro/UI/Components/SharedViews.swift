@@ -63,6 +63,61 @@ struct EmptyState: View {
     }
 }
 
+// MARK: - Page background with character artwork
+
+public extension View {
+    /// 给一个页面加立绘半透明背景层。立绘从 @AppStorage 读，靠右下角，保持原图比例。
+    /// 所有列表页都应该用同一个，视觉一致。
+    func neiroPageBackground() -> some View {
+        modifier(NeiroPageBackground())
+    }
+}
+
+private struct NeiroPageBackground: ViewModifier {
+    @AppStorage(NeiroTheme.backgroundImagePathKey) private var imagePath: String = ""
+    @AppStorage(NeiroTheme.backgroundOpacityKey) private var opacity: Double = 0.35
+
+    func body(content: Content) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            content
+            if !imagePath.isEmpty {
+                CharacterArtworkLayer(imagePath: imagePath, opacity: opacity)
+                    .allowsHitTesting(false)
+                    .padding(.trailing, 24)
+                    .padding(.bottom, 24)
+            }
+        }
+    }
+}
+
+struct CharacterArtworkLayer: View {
+    let imagePath: String
+    let opacity: Double
+
+    var body: some View {
+        if let img = NSImage(contentsOfFile: imagePath) {
+            GeometryReader { geo in
+                let maxH = min(geo.size.height * 0.85, 720)
+                let maxW = min(geo.size.width * 0.40, 480)
+                let aspect = img.size.width / max(img.size.height, 1)
+                let (w, h): (CGFloat, CGFloat) = {
+                    let byHeight = (maxH * aspect, maxH)
+                    let byWidth  = (maxW, maxW / aspect)
+                    return byHeight.0 <= maxW ? byHeight : byWidth
+                }()
+                Image(nsImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: w, height: h)
+                    .opacity(opacity)
+                    .position(x: geo.size.width - w / 2,
+                              y: geo.size.height - h / 2)
+                    .animation(.easeInOut(duration: 0.35), value: imagePath)
+            }
+        }
+    }
+}
+
 // MARK: - Album thumbnail
 
 struct AlbumThumbnail: View {

@@ -34,7 +34,9 @@ private struct AppearanceSettings: View {
     @AppStorage(NeiroTheme.accentKey) private var accentHex: String = ""
     @AppStorage(NeiroTheme.appearanceKey) private var appearanceRaw: String = NeiroAppearance.system.rawValue
     @AppStorage(NeiroTheme.backgroundImagePathKey) private var bgImagePath: String = ""
-    @AppStorage(NeiroTheme.backgroundOpacityKey) private var bgOpacity: Double = 0.18
+    @AppStorage(NeiroTheme.backgroundOpacityKey) private var bgOpacity: Double = 0.35
+    @AppStorage(NeiroTheme.cornerRadiusKey) private var cornerRadius: Double = 14
+    @AppStorage(NeiroTheme.animationSpeedKey) private var animationSpeed: Double = 1.0
 
     @State private var customColor: Color = .pink
 
@@ -135,7 +137,34 @@ private struct AppearanceSettings: View {
                 }
                 .disabled(bgImagePath.isEmpty)
             } header: {
-                Text("角色立绘（仅在「播放列表」页右下角显示，保持原图比例）")
+                Text("角色立绘（在所有列表页的右下角显示，保持原图比例）")
+            }
+
+            Section("细节") {
+                LabeledContent("圆角强度") {
+                    HStack {
+                        Slider(value: $cornerRadius, in: 6...22, step: 1)
+                        Text("\(Int(cornerRadius))pt")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .trailing)
+                    }
+                }
+
+                LabeledContent("动画速度") {
+                    HStack {
+                        Slider(value: $animationSpeed, in: 0.5...1.5, step: 0.1)
+                        Text(String(format: "%.1f×", animationSpeed))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .trailing)
+                    }
+                }
+
+                Button("恢复默认") {
+                    cornerRadius = 14
+                    animationSpeed = 1.0
+                }
             }
         }
         .formStyle(.grouped)
@@ -186,6 +215,8 @@ private struct AppearanceSettings: View {
 private struct LibrarySettings: View {
     @Environment(LibraryService.self) private var library
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.modelContext) private var context
+    @State private var showClearConfirm = false
 
     var body: some View {
         Form {
@@ -231,9 +262,34 @@ private struct LibrarySettings: View {
                     Label("在访达打开", systemImage: "folder")
                 }
             }
+
+            Section("危险操作") {
+                Button(role: .destructive) {
+                    showClearConfirm = true
+                } label: {
+                    Label("清空媒体库", systemImage: "trash")
+                }
+                .help("会移除所有曲目、专辑、作曲家的索引；源文件不动")
+            }
         }
         .formStyle(.grouped)
         .padding()
+        .confirmationDialog("确定清空整个媒体库吗？", isPresented: $showClearConfirm) {
+            Button("清空", role: .destructive) {
+                clearLibrary()
+            }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("会删除所有曲目、专辑、作曲家的索引（不动你的源文件）。默认播放列表会保留。")
+        }
+    }
+
+    private func clearLibrary() {
+        // 删 Track / Album / Artist；保留 Playlist 的默认条目（kindRaw 是 favorite* / anime）
+        try? context.delete(model: Track.self)
+        try? context.delete(model: Album.self)
+        try? context.delete(model: Artist.self)
+        try? context.save()
     }
 
     @ViewBuilder

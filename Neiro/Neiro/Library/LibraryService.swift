@@ -258,7 +258,9 @@ enum MetadataExtractor {
             }
         }
 
-        // format metadata（ID3 / iTunes / Vorbis comments 等扩展字段）
+        // format-specific metadata（ID3 / iTunes / Vorbis comments）
+        // 关键：FLAC 经常在 commonKey 上读不到 artist/album，必须扫这里。
+        let defaultTitle = url.deletingPathExtension().lastPathComponent
         var trackNumber: Int?
         var discNumber: Int?
         var genre: String?
@@ -268,21 +270,51 @@ enum MetadataExtractor {
             for item in items {
                 guard let keyAny = item.key else { continue }
                 let keyStr = "\(keyAny)".lowercased()
-                if keyStr.contains("tracknumber") || keyStr.contains("trkn") || keyStr.contains("trck") {
+
+                // ---- Title fallback ----
+                if title == defaultTitle,
+                   matchesAny(keyStr, ["title", "tit2", "©nam", "©NAM", "inam"]) {
+                    if let v = try? await item.load(.stringValue), !v.isEmpty { title = v }
+                }
+                // ---- Artist fallback ----
+                else if artist.isEmpty,
+                        matchesAny(keyStr, ["artist", "tpe1", "©art", "©ART", "iart", "album_artist", "albumartist", "tpe2"]) {
+                    if let v = try? await item.load(.stringValue), !v.isEmpty { artist = v }
+                }
+                // ---- Album fallback ----
+                else if album.isEmpty,
+                        matchesAny(keyStr, ["album", "talb", "©alb", "©ALB", "iprd"]) {
+                    if let v = try? await item.load(.stringValue), !v.isEmpty { album = v }
+                }
+                // ---- Artwork fallback ----
+                else if artwork == nil,
+                        matchesAny(keyStr, ["picture", "apic", "covr", "metadata_block_picture"]) {
+                    if let data = try? await item.load(.dataValue) {
+                        artwork = downscaleArtwork(data)
+                    }
+                }
+                // ---- Track number ----
+                else if matchesAny(keyStr, ["tracknumber", "trkn", "trck"]) {
                     if let v = try? await item.load(.stringValue) {
                         trackNumber = Int(v.split(separator: "/").first.map(String.init) ?? "") ?? trackNumber
                     } else if let v = try? await item.load(.numberValue) {
                         trackNumber = v.intValue
                     }
-                } else if keyStr.contains("discnumber") || keyStr.contains("disk") || keyStr.contains("tpos") {
+                }
+                // ---- Disc number ----
+                else if matchesAny(keyStr, ["discnumber", "disk", "tpos"]) {
                     if let v = try? await item.load(.stringValue) {
                         discNumber = Int(v.split(separator: "/").first.map(String.init) ?? "") ?? discNumber
                     } else if let v = try? await item.load(.numberValue) {
                         discNumber = v.intValue
                     }
-                } else if keyStr.contains("genre") || keyStr.contains("tcon") {
+                }
+                // ---- Genre ----
+                else if matchesAny(keyStr, ["genre", "tcon", "©gen", "©GEN"]) {
                     if let v = try? await item.load(.stringValue) { genre = v }
-                } else if keyStr.contains("year") || keyStr.contains("date") || keyStr.contains("tyer") || keyStr.contains("tdrc") {
+                }
+                // ---- Year ----
+                else if matchesAny(keyStr, ["year", "date", "tyer", "tdrc", "©day"]) {
                     if year == nil, let v = try? await item.load(.stringValue), let y = parseYear(v) {
                         year = y
                     }
@@ -320,6 +352,15 @@ enum MetadataExtractor {
                         duration: duration,
                         sampleRate: sampleRate, bitDepth: bitDepth, channels: channels,
                         artwork: artwork)
+    }
+
+    /// keyStr 是否完全等于或包含 needles 之一（用 contains 容错大小写已经 lowercase 过）。
+    private static func matchesAny(_ keyStr: String, _ needles: [String]) -> Bool {
+        for n in needles {
+            let lower = n.lowercased()
+            if keyStr == lower || keyStr.contains(lower) { return true }
+        }
+        return false
     }
 
     private static func parseYear(_ s: String) -> Int? {

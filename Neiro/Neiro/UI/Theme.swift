@@ -23,15 +23,16 @@ public extension View {
         modifier(GlassBackground(cornerRadius: cornerRadius, material: material, tint: tint))
     }
 
-    /// 浮岛卡片：玻璃背景 + 细描边 + 柔阴影，适合主内容区里的"卡片"。
+    /// 浮岛卡片：玻璃背景 + accent 染色 + 描边 + 染色阴影。
+    /// 主题色会让卡片底色 / 边框 / 阴影都跟着变。
     func neiroCard(cornerRadius: CGFloat = 18) -> some View {
         self
-            .neiroGlass(cornerRadius: cornerRadius)
+            .neiroGlass(cornerRadius: cornerRadius, tint: .accentColor)
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+                    .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+            .shadow(color: .accentColor.opacity(0.18), radius: 14, y: 6)
     }
 }
 
@@ -92,6 +93,12 @@ public enum NeiroTheme {
 
     /// 背景立绘透明度
     public static let backgroundOpacityKey = "NeiroBackgroundOpacity"
+
+    /// 圆角强度（卡片 / 按钮 等共用的基础半径）
+    public static let cornerRadiusKey = "NeiroCornerRadius"
+
+    /// 动画速度倍率（0.5 = 慢一半，1.5 = 快一半）
+    public static let animationSpeedKey = "NeiroAnimationSpeed"
 
     /// 预设的强调色色板（含一个二次元向的樱花粉）
     public static let presets: [(name: String, color: Color)] = [

@@ -16,6 +16,7 @@ extension Notification.Name {
 struct NeiroApp: App {
     @State private var engine = AudioEngine()
     @State private var library: LibraryService
+    @State private var router = AppRouter()
     @AppStorage(NeiroTheme.accentKey) private var accentHex: String = ""
     @AppStorage(NeiroTheme.appearanceKey) private var appearanceRaw: String = NeiroAppearance.system.rawValue
 
@@ -44,12 +45,14 @@ struct NeiroApp: App {
             RootView()
                 .environment(engine)
                 .environment(library)
+                .environment(router)
                 .modelContainer(modelContainer)
                 .tint(accentColor)
                 .preferredColorScheme(NeiroAppearance(rawValue: appearanceRaw)?.colorScheme)
                 .frame(minWidth: 880, minHeight: 600)
         }
-        .windowToolbarStyle(.unified)
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("关于 Neiro") {
@@ -69,6 +72,7 @@ struct NeiroApp: App {
             ImportView()
                 .environment(engine)
                 .environment(library)
+                .environment(router)
                 .modelContainer(modelContainer)
                 .tint(accentColor)
                 .preferredColorScheme(NeiroAppearance(rawValue: appearanceRaw)?.colorScheme)
@@ -80,6 +84,7 @@ struct NeiroApp: App {
             SettingsView()
                 .environment(engine)
                 .environment(library)
+                .environment(router)
                 .modelContainer(modelContainer)
                 .tint(accentColor)
                 .preferredColorScheme(NeiroAppearance(rawValue: appearanceRaw)?.colorScheme)

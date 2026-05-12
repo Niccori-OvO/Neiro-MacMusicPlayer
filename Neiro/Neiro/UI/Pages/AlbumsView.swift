@@ -14,6 +14,14 @@ struct AlbumsView: View {
     private let columns = [GridItem(.adaptive(minimum: 160), spacing: 16)]
 
     var body: some View {
+        content
+            .neiroPageBackground()
+            .sheet(item: $selectedAlbum) { album in
+                AlbumDetailSheet(album: album)
+            }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             PageHeader(title: "专辑", count: albums.count)
 
@@ -32,12 +40,10 @@ struct AlbumsView: View {
                     }
                     .padding(.top, 4)
                 }
+                .scrollContentBackground(.hidden)
             }
         }
         .padding(20)
-        .sheet(item: $selectedAlbum) { album in
-            AlbumDetailSheet(album: album)
-        }
     }
 }
 

@@ -13,6 +13,8 @@ import SwiftData
 
 struct PlayerBar: View {
     @Environment(AudioEngine.self) private var engine
+    @Environment(AppRouter.self) private var router
+    @Environment(\.modelContext) private var context
     @Query private var allTracks: [Track]
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
@@ -99,32 +101,40 @@ struct PlayerBar: View {
     }
 
     private var artworkThumb: some View {
-        Group {
-            if let data = currentTrack?.album?.artworkData,
-               let img = NSImage(data: data) {
-                Image(nsImage: img)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .shadow(radius: 2, y: 1)
-            } else {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(LinearGradient(
-                            colors: [.accentColor.opacity(0.5), .accentColor.opacity(0.15)],
-                            startPoint: .top, endPoint: .bottom))
-                    Image(systemName: "music.note")
-                        .foregroundStyle(.white.opacity(0.9))
-                        .font(.title3)
-                }
-                .frame(width: 44, height: 44)
-                .shadow(radius: 2, y: 1)
+        Button {
+            if engine.currentURL != nil {
+                router.presentNowPlaying()
             }
+        } label: {
+            Group {
+                if let data = currentTrack?.album?.artworkData,
+                   let img = NSImage(data: data) {
+                    Image(nsImage: img)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .shadow(radius: 2, y: 1)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(LinearGradient(
+                                colors: [.accentColor.opacity(0.5), .accentColor.opacity(0.15)],
+                                startPoint: .top, endPoint: .bottom))
+                        Image(systemName: "music.note")
+                            .foregroundStyle(.white.opacity(0.9))
+                            .font(.title3)
+                    }
+                    .frame(width: 44, height: 44)
+                    .shadow(radius: 2, y: 1)
+                }
+            }
+            .scaleEffect(isPlaying ? 1.0 : 0.92)
+            .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isPlaying)
+            .animation(.easeInOut(duration: 0.25), value: currentTrack?.id)
         }
-        .scaleEffect(isPlaying ? 1.0 : 0.92)
-        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isPlaying)
-        .animation(.easeInOut(duration: 0.25), value: currentTrack?.id)
+        .buttonStyle(.plain)
+        .help("打开播放详情")
     }
 
     private var progressSlider: some View {
@@ -154,17 +164,40 @@ struct PlayerBar: View {
     @ViewBuilder
     private var rightControls: some View {
         @Bindable var engine = engine
-        HStack(spacing: 12) {
-            iconButton("text.bubble") {
-                // Phase 3：歌词
+        HStack(spacing: 10) {
+            // 喜爱
+            Button {
+                if let t = currentTrack {
+                    LibraryActions.toggleFavorite(t, in: context)
+                }
+            } label: {
+                Image(systemName: (currentTrack?.isFavorite ?? false) ? "heart.fill" : "heart")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle((currentTrack?.isFavorite ?? false) ? .pink : .secondary)
+                    .frame(width: 26, height: 26)
+                    .contentTransition(.symbolEffect(.replace))
             }
-            .help("歌词（Phase 3）")
-            .disabled(true)
+            .buttonStyle(.borderless)
+            .disabled(currentTrack == nil)
+            .help("喜爱")
 
-            iconButton("list.bullet") {
-                // Phase 2：播放队列
+            // 歌词
+            Button {
+                router.toggleLyrics()
+            } label: {
+                Image(systemName: "text.bubble")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(router.isLyricsPresented ? Color.accentColor : .primary)
+                    .frame(width: 26, height: 26)
             }
-            .help("播放队列（Phase 2）")
+            .buttonStyle(.borderless)
+            .help("歌词")
+
+            // 队列（Phase 2 接入真实队列）
+            iconButton("list.bullet") {
+                // TODO Phase 2 真实队列
+            }
+            .help("播放队列（即将上线）")
             .disabled(true)
 
             HStack(spacing: 6) {
@@ -176,7 +209,7 @@ struct PlayerBar: View {
                     .controlSize(.mini)
             }
         }
-        .frame(width: 220, alignment: .trailing)
+        .frame(width: 260, alignment: .trailing)
     }
 
     // MARK: - Helpers

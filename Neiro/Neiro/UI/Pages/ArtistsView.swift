@@ -12,6 +12,14 @@ struct ArtistsView: View {
     @State private var selected: Artist?
 
     var body: some View {
+        content
+            .neiroPageBackground()
+            .sheet(item: $selected) { artist in
+                ArtistDetailSheet(artist: artist)
+            }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             PageHeader(title: "作曲家", count: artists.count)
 
@@ -35,12 +43,10 @@ struct ArtistsView: View {
                         .tag(artist)
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
         }
         .padding(20)
-        .sheet(item: $selected) { artist in
-            ArtistDetailSheet(artist: artist)
-        }
     }
 }
 

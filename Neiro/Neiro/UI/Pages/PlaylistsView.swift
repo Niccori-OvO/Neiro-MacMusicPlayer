@@ -2,8 +2,7 @@
 //  PlaylistsView.swift
 //  Neiro
 //
-//  Phase 1：列出默认 playlist。
-//  立绘 PNG 仅在这一页右侧显示，固定比例 + 半透明，不挡操作。
+//  Phase 1：列出默认 playlist。立绘背景由共享 modifier 提供。
 //
 
 import SwiftUI
@@ -14,19 +13,10 @@ import UniformTypeIdentifiers
 struct PlaylistsView: View {
     @Query(sort: \Playlist.sortOrder) private var playlists: [Playlist]
     @AppStorage(NeiroTheme.backgroundImagePathKey) private var bgImagePath: String = ""
-    @AppStorage(NeiroTheme.backgroundOpacityKey) private var bgOpacity: Double = 0.45
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            // 主内容
-            mainContent
-
-            // 立绘：仅在 PlaylistsView 右下角，固定比例
-            CharacterArtwork(imagePath: bgImagePath, opacity: bgOpacity)
-                .allowsHitTesting(false)
-                .padding(.trailing, 24)
-                .padding(.bottom, 24)
-        }
+        mainContent
+            .neiroPageBackground()
     }
 
     private var mainContent: some View {
@@ -39,8 +29,8 @@ struct PlaylistsView: View {
                            subtitle: "默认列表会在首次启动时创建")
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 16)],
-                              alignment: .leading, spacing: 16) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 18)],
+                              alignment: .leading, spacing: 18) {
                         ForEach(playlists) { pl in
                             PlaylistCard(playlist: pl)
                                 .hoverLift()
@@ -52,13 +42,15 @@ struct PlaylistsView: View {
                                 }
                         }
                     }
+                    .padding(.horizontal, 8)
                     .padding(.top, 4)
-                    // 留出右下角立绘空间
-                    .padding(.trailing, bgImagePath.isEmpty ? 0 : 60)
+                    .padding(.trailing, bgImagePath.isEmpty ? 8 : 60)
                 }
+                .scrollContentBackground(.hidden)
+                .scrollIndicators(.hidden)
             }
         }
-        .padding(20)
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .contextMenu {
             Button("更换/导入立绘…") { chooseBackgroundImage() }
@@ -77,39 +69,6 @@ struct PlaylistsView: View {
         panel.prompt = "选择"
         if panel.runModal() == .OK, let url = panel.url {
             bgImagePath = url.path
-        }
-    }
-}
-
-// MARK: - 立绘视图（保持原图比例）
-
-private struct CharacterArtwork: View {
-    let imagePath: String
-    let opacity: Double
-
-    var body: some View {
-        if !imagePath.isEmpty, let img = NSImage(contentsOfFile: imagePath) {
-            // 用原图比例展示，最大不超过容器一半高度 / 一定宽度
-            GeometryReader { geo in
-                let maxH = min(geo.size.height * 0.85, 720)
-                let maxW = min(geo.size.width * 0.40, 480)
-                let aspect = img.size.width / max(img.size.height, 1)
-                // 根据宽高比决定以哪边为约束
-                let (w, h): (CGFloat, CGFloat) = {
-                    let byHeight = (maxH * aspect, maxH)
-                    let byWidth  = (maxW, maxW / aspect)
-                    return byHeight.0 <= maxW ? byHeight : byWidth
-                }()
-
-                Image(nsImage: img)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: w, height: h)
-                    .opacity(opacity)
-                    .position(x: geo.size.width - w / 2,
-                              y: geo.size.height - h / 2)
-                    .animation(.easeInOut(duration: 0.35), value: imagePath)
-            }
         }
     }
 }

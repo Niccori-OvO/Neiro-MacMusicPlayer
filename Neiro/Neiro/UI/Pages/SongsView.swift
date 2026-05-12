@@ -8,9 +8,15 @@ import SwiftData
 
 struct SongsView: View {
     @Environment(AudioEngine.self) private var engine
+    @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\Track.title)]) private var tracks: [Track]
 
     var body: some View {
+        content
+            .neiroPageBackground()
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             PageHeader(title: "全部歌曲", count: tracks.count)
 
@@ -48,7 +54,20 @@ struct SongsView: View {
                         formatBadge(track)
                     }
                     .width(120)
+                    TableColumn("") { track in
+                        Button {
+                            LibraryActions.toggleFavorite(track, in: context)
+                        } label: {
+                            Image(systemName: track.isFavorite ? "heart.fill" : "heart")
+                                .foregroundStyle(track.isFavorite ? .pink : .secondary)
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .buttonStyle(.borderless)
+                        .help("喜爱")
+                    }
+                    .width(40)
                 }
+                .scrollContentBackground(.hidden)
             }
         }
         .padding(20)
