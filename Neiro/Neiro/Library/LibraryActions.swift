@@ -26,10 +26,39 @@ public enum LibraryActions {
         try? context.save()
     }
 
-    /// 取「喜爱歌曲」playlist（按 kindRaw 找）。
+    // MARK: - Album / Artist 喜爱
+
+    /// 翻转 album 的喜爱状态，并把它名下所有 tracks 加入/移出「喜爱专辑」playlist。
+    public static func toggleFavorite(_ album: Album, in context: ModelContext) {
+        album.isFavorite.toggle()
+        syncFavoriteAlbumsPlaylist(for: album, in: context)
+        try? context.save()
+    }
+
+    /// 翻转 artist 的喜爱状态，并把它名下所有 tracks 加入/移出「喜爱作曲家」playlist。
+    public static func toggleFavorite(_ artist: Artist, in context: ModelContext) {
+        artist.isFavorite.toggle()
+        syncFavoriteArtistsPlaylist(for: artist, in: context)
+        try? context.save()
+    }
+
+    // MARK: - 默认 playlist 取值
+
     public static func favoriteTracksPlaylist(in context: ModelContext) -> Playlist? {
-        let kind = Playlist.Kind.favoriteTracks.rawValue
-        let descriptor = FetchDescriptor<Playlist>(predicate: #Predicate { $0.kindRaw == kind })
+        defaultPlaylist(kind: .favoriteTracks, in: context)
+    }
+
+    public static func favoriteAlbumsPlaylist(in context: ModelContext) -> Playlist? {
+        defaultPlaylist(kind: .favoriteAlbums, in: context)
+    }
+
+    public static func favoriteArtistsPlaylist(in context: ModelContext) -> Playlist? {
+        defaultPlaylist(kind: .favoriteArtists, in: context)
+    }
+
+    private static func defaultPlaylist(kind: Playlist.Kind, in context: ModelContext) -> Playlist? {
+        let raw = kind.rawValue
+        let descriptor = FetchDescriptor<Playlist>(predicate: #Predicate { $0.kindRaw == raw })
         return try? context.fetch(descriptor).first
     }
 
@@ -44,6 +73,30 @@ public enum LibraryActions {
             }
         } else {
             pl.tracks.removeAll(where: { $0.id == id })
+        }
+    }
+
+    private static func syncFavoriteAlbumsPlaylist(for album: Album, in context: ModelContext) {
+        guard let pl = favoriteAlbumsPlaylist(in: context) else { return }
+        let albumTrackIDs = Set(album.tracks.map(\.id))
+        if album.isFavorite {
+            for t in album.tracks where !pl.tracks.contains(where: { $0.id == t.id }) {
+                pl.tracks.append(t)
+            }
+        } else {
+            pl.tracks.removeAll { albumTrackIDs.contains($0.id) }
+        }
+    }
+
+    private static func syncFavoriteArtistsPlaylist(for artist: Artist, in context: ModelContext) {
+        guard let pl = favoriteArtistsPlaylist(in: context) else { return }
+        let artistTrackIDs = Set(artist.tracks.map(\.id))
+        if artist.isFavorite {
+            for t in artist.tracks where !pl.tracks.contains(where: { $0.id == t.id }) {
+                pl.tracks.append(t)
+            }
+        } else {
+            pl.tracks.removeAll { artistTrackIDs.contains($0.id) }
         }
     }
 }

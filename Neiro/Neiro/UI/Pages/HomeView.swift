@@ -16,6 +16,8 @@ struct HomeView: View {
     @Query private var tracks: [Track]
     @Query private var albums: [Album]
     @Query private var artists: [Artist]
+    @AppStorage(NeiroTheme.homeSubtitleKey) private var homeSubtitle: String = NeiroTheme.defaultHomeSubtitle
+    @AppStorage(NeiroTheme.languageKey) private var languageRaw: String = NeiroLanguage.chinese.rawValue
 
     var body: some View {
         ScrollView {
@@ -32,7 +34,6 @@ struct HomeView: View {
         }
         .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
-        .neiroPageBackground()
     }
 
     // MARK: - Hero
@@ -41,19 +42,30 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(greeting)
                 .font(.largeTitle.bold())
-            Text("Neiro · 你的本地音乐库")
+            Text(homeSubtitle)
                 .foregroundStyle(.secondary)
         }
     }
 
     private var greeting: String {
+        let language = NeiroLanguage(rawValue: languageRaw) ?? .chinese
         let hour = Calendar.current.component(.hour, from: Date())
-        switch hour {
-        case 5..<11:  return "早安"
-        case 11..<14: return "中午好"
-        case 14..<18: return "下午好"
-        case 18..<23: return "晚上好"
-        default:      return "夜深了"
+        if language == .english {
+            switch hour {
+            case 5..<11:  return "Good morning"
+            case 11..<14: return "Good noon"
+            case 14..<18: return "Good afternoon"
+            case 18..<23: return "Good evening"
+            default:      return "Late night"
+            }
+        } else {
+            switch hour {
+            case 5..<11:  return "早安"
+            case 11..<14: return "中午好"
+            case 14..<18: return "下午好"
+            case 18..<23: return "晚上好"
+            default:      return "夜深了"
+            }
         }
     }
 
@@ -62,7 +74,7 @@ struct HomeView: View {
     private var dailyPicks: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("每日推荐").font(.title2.bold())
+                Text(NeiroText.tr("每日推荐", "Daily Picks")).font(.title2.bold())
                 Text(todayDateLabel)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
@@ -72,7 +84,7 @@ struct HomeView: View {
                         engine.load(url: first.fileURL)
                     }
                 } label: {
-                    Label("播放", systemImage: "play.fill")
+                    Label(NeiroText.tr("播放", "Play"), systemImage: "play.fill")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -118,22 +130,22 @@ struct HomeView: View {
 
     private var stats: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("媒体库").font(.title3.bold())
+            Text(NeiroText.tr("媒体库", "Library")).font(.title3.bold())
             HStack(spacing: 16) {
                 Button { router.go(.songs) } label: {
-                    StatCard(icon: "music.note", title: "歌曲", value: "\(tracks.count)")
+                    StatCard(icon: "music.note", title: NeiroText.tr("歌曲", "Songs"), value: "\(tracks.count)")
                 }
                 .buttonStyle(.plain)
                 .hoverLift()
 
                 Button { router.go(.albums) } label: {
-                    StatCard(icon: "square.stack", title: "专辑", value: "\(albums.count)")
+                    StatCard(icon: "square.stack", title: NeiroText.tr("专辑", "Albums"), value: "\(albums.count)")
                 }
                 .buttonStyle(.plain)
                 .hoverLift()
 
                 Button { router.go(.artists) } label: {
-                    StatCard(icon: "person.2", title: "作曲家", value: "\(artists.count)")
+                    StatCard(icon: "person.2", title: NeiroText.tr("作曲家", "Artists"), value: "\(artists.count)")
                 }
                 .buttonStyle(.plain)
                 .hoverLift()
@@ -145,15 +157,15 @@ struct HomeView: View {
 
     private var emptyHint: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("还没有歌曲", systemImage: "exclamationmark.circle")
+            Label(NeiroText.tr("还没有歌曲", "No songs yet"), systemImage: "exclamationmark.circle")
                 .font(.headline)
-            Text("把音乐文件或文件夹拖进「导入音乐」窗口即可加入媒体库。源文件留在原位置，Neiro 不会扫描其它任何路径。")
+            Text(NeiroText.tr("把音乐文件或文件夹拖进「导入音乐」窗口即可加入媒体库。源文件留在原位置，Neiro 不会扫描其它任何路径。", "Drag music files or folders into Import Music to add them. Source files stay where they are; Neiro scans nothing else."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 openWindow(id: "import")
             } label: {
-                Label("打开导入窗口", systemImage: "tray.and.arrow.down")
+                Label(NeiroText.tr("打开导入窗口", "Open Import Window"), systemImage: "tray.and.arrow.down")
             }
             .controlSize(.large)
             .keyboardShortcut("o", modifiers: [.command])
@@ -202,7 +214,7 @@ private struct DailyPickCard: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                     .frame(width: 140, alignment: .leading)
-                Text(track.artist?.name ?? "未知作曲家")
+                Text(track.artist?.name ?? NeiroText.tr("未知作曲家", "Unknown Artist"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

@@ -2,12 +2,12 @@
 //  Sidebar.swift
 //  Neiro
 //
-//  左侧导航。Apple Music 风格：上面是固定入口，下面列出每个 playlist。
-//  选中项用强调色背景高亮（不是文字变色）。
+//  左侧固定导航。
 //
 
 import SwiftUI
 import SwiftData
+import AppKit
 
 struct Sidebar: View {
     @Binding var selection: NavigationDestination?
@@ -21,85 +21,112 @@ struct Sidebar: View {
     @State private var renamingText = ""
 
     var body: some View {
-        List(selection: $selection) {
-            Section("Library") {
-                row(.home,    label: "Home",       icon: "house")
-                row(.songs,   label: "全部歌曲",   icon: "music.note.list")
-                row(.albums,  label: "专辑",       icon: "square.stack")
-                row(.artists, label: "作曲家",     icon: "person.2")
+        VStack(spacing: 0) {
+            WindowControlsRow()
+                .padding(.horizontal, 14)
+                .padding(.top, 4)
+                .padding(.bottom, 2)
+
+            List(selection: $selection) {
+            Section {
+                row(.home,    label: NeiroText.tr("首页", "Home"), icon: "house")
+                row(.songs,   label: NeiroText.tr("全部歌曲", "Songs"), icon: "music.note.list")
+                row(.albums,  label: NeiroText.tr("专辑", "Albums"), icon: "square.stack")
+                row(.artists, label: NeiroText.tr("作曲家", "Artists"), icon: "person.2")
+            } header: {
+                sectionHeader(title: NeiroText.tr("资料库", "Library"), action: nil)
             }
 
             Section {
                 ForEach(playlists) { pl in
-                    NavigationLink(value: NavigationDestination.playlist(pl.id)) {
-                        Label(pl.name, systemImage: icon(for: pl.kind))
-                            .badge(pl.tracks.count)
-                            .padding(.vertical, 2)
-                    }
-                    .contextMenu {
-                        Button("打开") {
-                            router.go(.playlist(pl.id))
+                    Label {
+                        HStack {
+                            Text(pl.name).lineLimit(1)
+                            Spacer()
+                            if pl.tracks.count > 0 {
+                                Text("\(pl.tracks.count)")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                    } icon: {
+                        Image(systemName: icon(for: pl.kind))
+                            .frame(width: 18, alignment: .center)
+                    }
+                    .padding(.vertical, 3)
+                    .tag(NavigationDestination.playlist(pl.id))
+                    .contextMenu {
+                        Button(NeiroText.tr("打开", "Open")) { router.go(.playlist(pl.id)) }
                         if pl.kind == .userCreated {
                             Divider()
-                            Button("重命名…") {
+                            Button(NeiroText.tr("重命名…", "Rename…")) {
                                 renamingID = pl.id
                                 renamingText = pl.name
                             }
-                            Button("删除", role: .destructive) {
-                                delete(pl)
-                            }
+                            Button(NeiroText.tr("删除", "Delete"), role: .destructive) { delete(pl) }
                         }
                     }
                 }
             } header: {
-                HStack {
-                    Text("播放列表")
-                    Spacer()
-                    Button {
-                        newPlaylistName = ""
-                        showNewPlaylistSheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.caption.bold())
-                    }
-                    .buttonStyle(.plain)
-                    .help("新建播放列表")
+                sectionHeader(title: NeiroText.tr("播放列表", "Playlists")) {
+                    newPlaylistName = ""
+                    showNewPlaylistSheet = true
                 }
-                .padding(.top, 8)
             }
-        }
-        .listStyle(.sidebar)
-        .navigationTitle("Neiro")
-        .safeAreaInset(edge: .top, spacing: 0) {
-            // 顶部留位给 hiddenTitleBar 下的红绿黄交通灯按钮
-            Color.clear.frame(height: 6)
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
         }
         .contextMenu {
-            Button("新建播放列表…") {
+            Button(NeiroText.tr("新建播放列表…", "New Playlist…")) {
                 newPlaylistName = ""
                 showNewPlaylistSheet = true
             }
         }
-        // 新建 playlist
         .sheet(isPresented: $showNewPlaylistSheet) {
-            NewPlaylistSheet(name: $newPlaylistName) { name in
-                createPlaylist(named: name)
-            }
+            NewPlaylistSheet(name: $newPlaylistName) { createPlaylist(named: $0) }
         }
-        // 重命名
         .sheet(item: renamingBinding) { id in
-            RenamePlaylistSheet(name: $renamingText) { newName in
-                renamePlaylist(id: id.id, to: newName)
+            RenamePlaylistSheet(name: $renamingText) { renamePlaylist(id: id.id, to: $0) }
+        }
+    }
+
+    // MARK: - Subviews
+
+    @ViewBuilder
+    private func sectionHeader(title: String, action: (() -> Void)?) -> some View {
+        HStack {
+            Text(title)
+                .font(.subheadline.bold())
+                .foregroundStyle(.secondary)
+            Spacer()
+            if let action {
+                Button(action: action) {
+                    Image(systemName: "plus")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 14)
+                }
+                .buttonStyle(.plain)
+                .offset(y: 1)
+                .help(NeiroText.tr("新建播放列表", "New Playlist"))
             }
         }
+        .padding(.top, 6)
+        .padding(.bottom, 2)
     }
 
     @ViewBuilder
     private func row(_ dest: NavigationDestination, label: String, icon: String) -> some View {
-        NavigationLink(value: dest) {
-            Label(label, systemImage: icon)
+        Label {
+            Text(label)
+        } icon: {
+            Image(systemName: icon)
+                .frame(width: 18, alignment: .center)
         }
+        .padding(.vertical, 3)
+        .tag(dest)
     }
 
     private func icon(for kind: Playlist.Kind) -> String {
@@ -132,13 +159,11 @@ struct Sidebar: View {
     }
 
     private func delete(_ pl: Playlist) {
-        // 仅允许删除用户创建的 playlist
         guard pl.kind == .userCreated else { return }
         context.delete(pl)
         try? context.save()
     }
 
-    /// 把 renamingID 包装成 Identifiable 给 .sheet(item:) 用
     private var renamingBinding: Binding<IDWrapper?> {
         Binding(
             get: { renamingID.map(IDWrapper.init) },
@@ -159,17 +184,15 @@ private struct NewPlaylistSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("新建播放列表").font(.headline)
-            TextField("名字", text: $name)
+            Text(NeiroText.tr("新建播放列表", "New Playlist")).font(.headline)
+            TextField(NeiroText.tr("名字", "Name"), text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit { commit() }
-
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("创建") { commit() }
+                Button(NeiroText.tr("取消", "Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(NeiroText.tr("创建", "Create")) { commit() }
                     .buttonStyle(.borderedProminent)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)
@@ -188,6 +211,49 @@ private struct NewPlaylistSheet: View {
     }
 }
 
+private struct WindowControlsRow: View {
+    var body: some View {
+        HStack {
+            SystemWindowControlsHost()
+                .frame(width: 62, height: 14)
+            Spacer(minLength: 0)
+        }
+        .frame(height: 18)
+    }
+}
+
+private struct SystemWindowControlsHost: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        view.wantsLayer = false
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            attachSystemButtons(to: nsView, in: window)
+        }
+    }
+
+    private func attachSystemButtons(to host: NSView, in window: NSWindow) {
+        let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        let spacing: CGFloat = 8
+
+        for (index, type) in types.enumerated() {
+            guard let button = window.standardWindowButton(type) else { continue }
+            if button.superview !== host {
+                button.removeFromSuperview()
+                host.addSubview(button)
+            }
+            button.translatesAutoresizingMaskIntoConstraints = true
+            let y = max(0, (host.bounds.height - button.frame.height) * 0.5)
+            button.frame.origin = CGPoint(x: CGFloat(index) * (button.frame.width + spacing), y: y)
+            button.isHidden = false
+        }
+    }
+}
+
 private struct RenamePlaylistSheet: View {
     @Binding var name: String
     var onRename: (String) -> Void
@@ -196,17 +262,15 @@ private struct RenamePlaylistSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("重命名播放列表").font(.headline)
-            TextField("名字", text: $name)
+            Text(NeiroText.tr("重命名播放列表", "Rename Playlist")).font(.headline)
+            TextField(NeiroText.tr("名字", "Name"), text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit { commit() }
-
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("保存") { commit() }
+                Button(NeiroText.tr("取消", "Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(NeiroText.tr("保存", "Save")) { commit() }
                     .buttonStyle(.borderedProminent)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.defaultAction)

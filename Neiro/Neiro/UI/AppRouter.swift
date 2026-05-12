@@ -2,8 +2,6 @@
 //  AppRouter.swift
 //  Neiro
 //
-//  全局导航 + 面板状态。
-//
 
 import Foundation
 import SwiftUI
@@ -11,14 +9,12 @@ import SwiftUI
 @MainActor
 @Observable
 public final class AppRouter {
-    /// 当前 Sidebar 选中的页面
     public var selection: NavigationDestination? = .home
-
-    /// Now Playing 全屏页是否展示
     public var isNowPlayingPresented: Bool = false
-
-    /// 右侧歌词面板是否展示
     public var isLyricsPresented: Bool = false
+
+    /// 全局搜索关键字
+    public var searchQuery: String = ""
 
     public init() {}
 

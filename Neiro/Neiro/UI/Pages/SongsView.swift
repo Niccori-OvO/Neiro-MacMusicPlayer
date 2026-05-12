@@ -18,19 +18,19 @@ struct SongsView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PageHeader(title: "全部歌曲", count: tracks.count)
+            PageHeader(title: NeiroText.tr("全部歌曲", "Songs"), count: tracks.count)
 
             if tracks.isEmpty {
-                EmptyState(systemImage: "music.note", title: "媒体库还是空的",
-                           subtitle: "按 ⌘O 打开导入窗口，把音乐拖进去")
+                EmptyState(systemImage: "music.note", title: NeiroText.tr("媒体库还是空的", "Library is empty"),
+                           subtitle: NeiroText.tr("按 ⌘O 打开导入窗口，把音乐拖进去", "Press ⌘O to open import and drop music"))
             } else {
                 Table(tracks) {
-                    TableColumn("曲名") { track in
+                    TableColumn(NeiroText.tr("曲名", "Title")) { track in
                         HStack {
                             AlbumThumbnail(data: track.album?.artworkData, size: 32)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(track.title).font(.body)
-                                Text(track.artist?.name ?? "未知作曲家")
+                                Text(track.artist?.name ?? NeiroText.tr("未知作曲家", "Unknown Artist"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -40,17 +40,17 @@ struct SongsView: View {
                             engine.load(url: track.fileURL)
                         }
                     }
-                    TableColumn("专辑") { track in
+                    TableColumn(NeiroText.tr("专辑", "Album")) { track in
                         Text(track.album?.name ?? "—").foregroundStyle(.secondary)
                     }
                     .width(min: 140, ideal: 220)
-                    TableColumn("时长") { track in
+                    TableColumn(NeiroText.tr("时长", "Time")) { track in
                         Text(timeString(track.durationSeconds))
                             .font(.body.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                     .width(60)
-                    TableColumn("格式") { track in
+                    TableColumn(NeiroText.tr("格式", "Format")) { track in
                         formatBadge(track)
                     }
                     .width(120)
@@ -63,7 +63,7 @@ struct SongsView: View {
                                 .contentTransition(.symbolEffect(.replace))
                         }
                         .buttonStyle(.borderless)
-                        .help("喜爱")
+                        .help(NeiroText.tr("喜爱", "Favorite"))
                     }
                     .width(40)
                 }

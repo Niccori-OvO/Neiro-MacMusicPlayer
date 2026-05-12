@@ -20,7 +20,7 @@ struct PageHeader: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.largeTitle.bold())
+            Text(title).font(.title.bold())
             if let count {
                 Text("\(count)")
                     .font(.title3.monospacedDigit())
@@ -28,7 +28,8 @@ struct PageHeader: View {
             }
             Spacer()
         }
-        .padding(.bottom, 12)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
     }
 }
 

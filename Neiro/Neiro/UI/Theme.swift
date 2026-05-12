@@ -57,6 +57,19 @@ private struct GlassBackground: ViewModifier {
 
 // MARK: - Appearance
 
+public enum NeiroLanguage: String, CaseIterable, Identifiable {
+    case chinese
+    case english
+
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .chinese: "中文"
+        case .english: "English"
+        }
+    }
+}
+
 public enum NeiroAppearance: String, CaseIterable, Identifiable {
     case system
     case light
@@ -65,9 +78,9 @@ public enum NeiroAppearance: String, CaseIterable, Identifiable {
     public var id: String { rawValue }
     public var label: String {
         switch self {
-        case .system: "跟随系统"
-        case .light:  "浅色"
-        case .dark:   "深色"
+        case .system: NeiroText.tr("跟随系统", "System")
+        case .light:  NeiroText.tr("浅色", "Light")
+        case .dark:   NeiroText.tr("深色", "Dark")
         }
     }
     public var colorScheme: ColorScheme? {
@@ -100,6 +113,13 @@ public enum NeiroTheme {
     /// 动画速度倍率（0.5 = 慢一半，1.5 = 快一半）
     public static let animationSpeedKey = "NeiroAnimationSpeed"
 
+    /// Home 副标题
+    public static let homeSubtitleKey = "NeiroHomeSubtitle"
+    public static let defaultHomeSubtitle = "Neiro·音色 - 离线播放器"
+
+    /// 应用内语言
+    public static let languageKey = "NeiroLanguage"
+
     /// 预设的强调色色板（含一个二次元向的樱花粉）
     public static let presets: [(name: String, color: Color)] = [
         ("系统蓝", .accentColor),
@@ -127,5 +147,13 @@ public enum NeiroTheme {
         let g = Double((v >> 8) & 0xFF) / 255.0
         let b = Double(v & 0xFF) / 255.0
         return Color(red: r, green: g, blue: b)
+    }
+}
+
+public enum NeiroText {
+    public static func tr(_ zh: String, _ en: String) -> String {
+        let raw = UserDefaults.standard.string(forKey: NeiroTheme.languageKey) ?? NeiroLanguage.chinese.rawValue
+        let language = NeiroLanguage(rawValue: raw) ?? .chinese
+        return language == .english ? en : zh
     }
 }

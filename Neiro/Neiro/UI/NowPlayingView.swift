@@ -22,10 +22,18 @@ struct NowPlayingView: View {
     var body: some View {
         @Bindable var engine = engine
         ZStack {
+            // 背景层 + 点击空白处关闭
             background
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    router.dismissNowPlaying()
+                }
+            // 内容层不响应背景的 tap（控件单独处理）
             content
+                .allowsHitTesting(true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 
     // MARK: - Background
@@ -54,20 +62,32 @@ struct NowPlayingView: View {
     // MARK: - Content
 
     private var content: some View {
-        VStack(spacing: 28) {
-            topBar
-            Spacer(minLength: 0)
-            artwork
-            titleBlock
-            progress
-            controls
-            Spacer(minLength: 0)
+        GeometryReader { geo in
+            let side = min(geo.size.width, geo.size.height)
+            let containerWidth = min(geo.size.width * 0.84, 900)
+            let artworkSize = min(max(side * 0.24, 220), 380)
+            let titleSize = min(max(side * 0.030, 22), 34)
+            let progressWidth = min(max(containerWidth * 0.78, 380), 620)
+            let topPad = max(16, geo.safeAreaInsets.top + 6)
+            let controlSize = min(max(side * 0.018, 20), 26)
+
+            VStack(spacing: max(12, side * 0.015)) {
+                topBar(topPadding: topPad)
+                Spacer(minLength: 0)
+                artwork(size: artworkSize)
+                titleBlock(titleSize: titleSize)
+                progress(width: progressWidth)
+                controls(controlSize: controlSize)
+                Spacer(minLength: 0)
+            }
+            .frame(width: containerWidth)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, max(24, geo.size.width * 0.035))
+            .padding(.bottom, max(24, geo.safeAreaInsets.bottom + 8))
         }
-        .padding(.horizontal, 60)
-        .padding(.vertical, 32)
     }
 
-    private var topBar: some View {
+    private func topBar(topPadding: CGFloat) -> some View {
         HStack {
             Button {
                 router.dismissNowPlaying()
@@ -79,31 +99,20 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.escape, modifiers: [])
-
+            .help(NeiroText.tr("收起", "Collapse"))
             Spacer()
-
-            Button {
-                router.toggleLyrics()
-            } label: {
-                Image(systemName: "text.bubble")
-                    .font(.title3)
-                    .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(engine.currentURL == nil)
-            .help("歌词")
         }
+        .padding(.top, topPadding)
     }
 
-    private var artwork: some View {
+    private func artwork(size: CGFloat) -> some View {
         Group {
             if let data = currentTrack?.album?.artworkData,
                let img = NSImage(data: data) {
                 Image(nsImage: img)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 320, height: 320)
+                    .frame(width: size, height: size)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .shadow(color: .black.opacity(0.35), radius: 30, y: 18)
             } else {
@@ -116,7 +125,7 @@ struct NowPlayingView: View {
                         .font(.system(size: 80, weight: .light))
                         .foregroundStyle(.white.opacity(0.85))
                 }
-                .frame(width: 320, height: 320)
+                .frame(width: size, height: size)
                 .shadow(color: .black.opacity(0.35), radius: 30, y: 18)
             }
         }
@@ -124,14 +133,14 @@ struct NowPlayingView: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.75), value: isPlaying)
     }
 
-    private var titleBlock: some View {
+    private func titleBlock(titleSize: CGFloat) -> some View {
         VStack(spacing: 6) {
             Text(displayTitle)
-                .font(.system(size: 26, weight: .bold))
+                .font(.system(size: titleSize, weight: .bold))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
 
-            Text(currentTrack?.artist?.name ?? "未知作曲家")
+            Text(currentTrack?.artist?.name ?? NeiroText.tr("未知作曲家", "Unknown Artist"))
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -146,7 +155,7 @@ struct NowPlayingView: View {
         .frame(maxWidth: 540)
     }
 
-    private var progress: some View {
+    private func progress(width: CGFloat) -> some View {
         VStack(spacing: 6) {
             Slider(
                 value: Binding(
@@ -175,19 +184,33 @@ struct NowPlayingView: View {
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: 540)
+        .frame(width: width)
     }
 
-    private var controls: some View {
-        HStack(spacing: 40) {
-            iconButton("gobackward.10", size: 28) {
+    private func controls(controlSize: CGFloat) -> some View {
+        HStack(spacing: 32) {
+            Button {
+                if let t = currentTrack {
+                    LibraryActions.toggleFavorite(t, in: context)
+                }
+            } label: {
+                Image(systemName: (currentTrack?.isFavorite ?? false) ? "heart.fill" : "heart")
+                    .font(.system(size: 22))
+                    .foregroundStyle((currentTrack?.isFavorite ?? false) ? .pink : .secondary)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .buttonStyle(.plain)
+            .disabled(currentTrack == nil)
+            .help(NeiroText.tr("喜爱", "Favorite"))
+
+            iconButton("gobackward.10", size: controlSize) {
                 engine.seek(toSeconds: max(0, engine.currentTime - 10))
             }
             .disabled(engine.currentURL == nil)
 
             Button(action: togglePlayPause) {
                 Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 72))
+                    .font(.system(size: controlSize * 2.35))
                     .foregroundStyle(.tint)
                     .contentTransition(.symbolEffect(.replace))
                     .symbolEffect(.bounce, value: isPlaying)
@@ -195,26 +218,16 @@ struct NowPlayingView: View {
             .buttonStyle(.plain)
             .disabled(engine.currentURL == nil)
 
-            iconButton("goforward.10", size: 28) {
-                engine.seek(toSeconds: min(engine.duration, engine.currentTime + 10))
+            iconButton("goforward.10", size: controlSize) {
+                let target = min(max(0, engine.duration - 0.05), engine.currentTime + 10)
+                engine.seek(toSeconds: target)
             }
             .disabled(engine.currentURL == nil)
 
-            Spacer().frame(width: 4)
-
-            Button {
-                if let t = currentTrack {
-                    LibraryActions.toggleFavorite(t, in: context)
-                }
-            } label: {
-                Image(systemName: (currentTrack?.isFavorite ?? false) ? "heart.fill" : "heart")
-                    .font(.system(size: 24))
-                    .foregroundStyle((currentTrack?.isFavorite ?? false) ? .pink : .secondary)
-                    .contentTransition(.symbolEffect(.replace))
-            }
-            .buttonStyle(.plain)
-            .disabled(currentTrack == nil)
-            .help("喜爱")
+            // 占位让两侧对称
+            Image(systemName: "heart")
+                .font(.system(size: 22))
+                .opacity(0)
         }
     }
 
@@ -229,7 +242,7 @@ struct NowPlayingView: View {
 
     private var displayTitle: String {
         if let t = currentTrack?.title, !t.isEmpty { return t }
-        return engine.currentURL?.deletingPathExtension().lastPathComponent ?? "没有曲目"
+        return engine.currentURL?.deletingPathExtension().lastPathComponent ?? NeiroText.tr("没有曲目", "No Track")
     }
 
     private func togglePlayPause() {

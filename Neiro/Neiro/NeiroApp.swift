@@ -49,18 +49,18 @@ struct NeiroApp: App {
                 .modelContainer(modelContainer)
                 .tint(accentColor)
                 .preferredColorScheme(NeiroAppearance(rawValue: appearanceRaw)?.colorScheme)
-                .frame(minWidth: 880, minHeight: 600)
+                .frame(minWidth: 1245, minHeight: 600)
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button("关于 Neiro") {
+                Button(NeiroText.tr("关于 Neiro", "About Neiro")) {
                     NSApp.orderFrontStandardAboutPanel(nil)
                 }
             }
             CommandGroup(replacing: .newItem) {
-                Button("导入音乐…") {
+                Button(NeiroText.tr("导入音乐…", "Import Music…")) {
                     NotificationCenter.default.post(name: .neiroOpenImport, object: nil)
                 }
                 .keyboardShortcut("o", modifiers: [.command])
@@ -68,7 +68,7 @@ struct NeiroApp: App {
         }
 
         // 独立的导入窗口
-        Window("导入音乐", id: "import") {
+        Window(NeiroText.tr("导入音乐", "Import Music"), id: "import") {
             ImportView()
                 .environment(engine)
                 .environment(library)

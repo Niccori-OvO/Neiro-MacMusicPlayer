@@ -21,12 +21,12 @@ struct PlaylistsView: View {
 
     private var mainContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PageHeader(title: "播放列表", count: playlists.count)
+            PageHeader(title: NeiroText.tr("播放列表", "Playlists"), count: playlists.count)
 
             if playlists.isEmpty {
                 EmptyState(systemImage: "music.note.list",
-                           title: "暂无播放列表",
-                           subtitle: "默认列表会在首次启动时创建")
+                           title: NeiroText.tr("暂无播放列表", "No playlists"),
+                           subtitle: NeiroText.tr("默认列表会在首次启动时创建", "Default playlists are created on first launch"))
             } else {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 18)],
@@ -35,9 +35,9 @@ struct PlaylistsView: View {
                             PlaylistCard(playlist: pl)
                                 .hoverLift()
                                 .contextMenu {
-                                    Button("更换/导入立绘…") { chooseBackgroundImage() }
+                                    Button(NeiroText.tr("更换/导入立绘…", "Change/Import Artwork…")) { chooseBackgroundImage() }
                                     if !bgImagePath.isEmpty {
-                                        Button("清除立绘") { bgImagePath = "" }
+                                        Button(NeiroText.tr("清除立绘", "Clear Artwork")) { bgImagePath = "" }
                                     }
                                 }
                         }
@@ -53,9 +53,9 @@ struct PlaylistsView: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .contextMenu {
-            Button("更换/导入立绘…") { chooseBackgroundImage() }
+            Button(NeiroText.tr("更换/导入立绘…", "Change/Import Artwork…")) { chooseBackgroundImage() }
             if !bgImagePath.isEmpty {
-                Button("清除立绘") { bgImagePath = "" }
+                Button(NeiroText.tr("清除立绘", "Clear Artwork")) { bgImagePath = "" }
             }
         }
     }
@@ -66,7 +66,7 @@ struct PlaylistsView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.image, .png, .jpeg]
-        panel.prompt = "选择"
+        panel.prompt = NeiroText.tr("选择", "Choose")
         if panel.runModal() == .OK, let url = panel.url {
             bgImagePath = url.path
         }
@@ -95,7 +95,7 @@ private struct PlaylistCard: View {
             Text(playlist.name)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
-            Text("\(playlist.tracks.count) 首")
+            Text(NeiroText.tr("\(playlist.tracks.count) 首", "\(playlist.tracks.count) tracks"))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

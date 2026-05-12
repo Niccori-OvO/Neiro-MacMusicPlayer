@@ -2,10 +2,13 @@
 //  RootView.swift
 //  Neiro
 //
-//  顶层视图：左 Sidebar + 中主内容 + 底部贯穿播放栏。
+//  Apple Music v11 风格三栏 panel 布局：
+//    [ Sidebar ] [ Main (toolbar + content + InlinePlayerBar) ] [ Lyrics? ]
+//  每个 panel 竖向铺满整个窗口高度，浮在窗口背景之上。
 //
 
 import SwiftUI
+import SwiftData
 
 public enum NavigationDestination: Hashable {
     case home
@@ -13,8 +16,8 @@ public enum NavigationDestination: Hashable {
     case albums
     case artists
     case playlists
-    /// 指向某个具体 playlist 的页面（Phase 2 内容会接，骨架先打通）
     case playlist(UUID)
+    case search
 }
 
 struct RootView: View {
@@ -22,98 +25,105 @@ struct RootView: View {
     @Environment(LibraryService.self) private var library
     @Environment(AppRouter.self) private var router
     @Environment(\.openWindow) private var openWindow
-    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+
+    private let sidebarWidth: CGFloat = 230
+    private let lyricsWidth: CGFloat = 320
+    private let outerPadding: CGFloat = 10
+    private let verticalGap: CGFloat = 10
 
     var body: some View {
         @Bindable var router = router
+
         ZStack {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                Sidebar(selection: $router.selection)
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
-            } detail: {
-                HStack(spacing: 0) {
-                    MainContent(selection: router.selection)
+            AccentTintedBackground()
+
+            VStack(spacing: verticalGap) {
+                HStack(spacing: verticalGap) {
+                    // 1. Sidebar panel（红绿灯在内部）
+                    FloatingPanel {
+                        Sidebar(selection: $router.selection)
+                    }
+                    .frame(width: sidebarWidth)
+
+                    // 2. Main panel（toolbar + content）
+                    FloatingPanel {
+                        MainPanel()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    // 3. Lyrics panel（可隐藏）
                     if router.isLyricsPresented {
-                        LyricsPanel()
-                            .frame(width: 320)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
-                }
-            }
-            .navigationSplitViewStyle(.balanced)
-            .toolbar {
-                // 左侧：导入按钮，紧贴 sidebar toggle
-                ToolbarItemGroup(placement: .navigation) {
-                    Button {
-                        openWindow(id: "import")
-                    } label: {
-                        Label("导入", systemImage: "tray.and.arrow.down")
-                    }
-                    .help("导入音乐 (⌘O)")
-                }
-                // 右侧：歌词 + 正在播放，让顶部左右平衡
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button {
-                        router.toggleLyrics()
-                    } label: {
-                        Label("歌词", systemImage: "text.bubble")
-                            .symbolVariant(router.isLyricsPresented ? .fill : .none)
-                    }
-                    .help("歌词面板")
-                    .disabled(engine.currentURL == nil)
-
-                    Button {
-                        if engine.currentURL != nil {
-                            router.presentNowPlaying()
+                        FloatingPanel {
+                            LyricsPanel()
                         }
-                    } label: {
-                        Label("正在播放", systemImage: "play.square")
+                        .frame(width: lyricsWidth)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
-                    .help("打开播放详情")
-                    .disabled(engine.currentURL == nil)
                 }
+                BottomPlayerStrip()
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                PlayerBar()
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background {
-                        ZStack {
-                            Rectangle().fill(.ultraThinMaterial)
-                            Rectangle().fill(Color.accentColor.opacity(0.08))
-                        }
-                    }
-                    .overlay(alignment: .top) {
-                        Divider().opacity(0.5)
-                    }
-            }
+            .padding(outerPadding)
+            .animation(.spring(response: 0.42, dampingFraction: 0.86),
+                       value: router.isLyricsPresented)
 
-            // 全屏 Now Playing overlay
+            // 全屏 NowPlaying
             if router.isNowPlayingPresented {
                 NowPlayingView()
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(10)
             }
         }
+        .ignoresSafeArea(.container, edges: .top)
         .onReceive(NotificationCenter.default.publisher(for: .neiroOpenImport)) { _ in
             openWindow(id: "import")
         }
     }
 }
 
-/// 浅色 + 强调色染色的页面背景。
-/// windowBackgroundColor 跟随系统明暗自动选色，所以无论怎么切都不会过暗。
+// MARK: - Main panel
+
+private struct MainPanel: View {
+    @Environment(AppRouter.self) private var router
+    @Environment(AudioEngine.self) private var engine
+
+    var body: some View {
+        VStack(spacing: 0) {
+            MainToolbar()
+            ContentSwitch(selection: router.selection)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+// MARK: - Floating panel
+
+struct FloatingPanel<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+    }
+}
+
+// MARK: - Background
+
 struct AccentTintedBackground: View {
     var body: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor)
-                .ignoresSafeArea()
-            // 主题色淡淡地染一层，深浅模式都柔和
+            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
             LinearGradient(
                 colors: [
-                    Color.accentColor.opacity(0.10),
-                    Color.accentColor.opacity(0.02),
-                    Color.accentColor.opacity(0.06)
+                    Color.accentColor.opacity(0.18),
+                    Color.accentColor.opacity(0.05),
+                    Color.accentColor.opacity(0.12)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -124,40 +134,129 @@ struct AccentTintedBackground: View {
     }
 }
 
-// MARK: - Main content switch
+// MARK: - Main toolbar（每页顶部 filter + 搜索 capsule）
 
-private struct MainContent: View {
-    // 修复 Bug：加上 '?' 将其声明为可选类型，以接收调用方传来的可选值
+private struct MainToolbar: View {
+    @Environment(AppRouter.self) private var router
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        @Bindable var router = router
+        HStack(spacing: 10) {
+            Spacer()
+
+            // 导入按钮
+            topGlassButton(systemName: "tray.and.arrow.down", help: NeiroText.tr("导入音乐 (⌘O)", "Import Music (⌘O)")) {
+                openWindow(id: "import")
+            }
+
+            // 搜索胶囊
+            SearchPill(text: $router.searchQuery) {
+                if !$0.isEmpty { router.go(.search) }
+            }
+            .frame(width: 240)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+        .padding(.bottom, 6)
+    }
+
+    private func topGlassButton(systemName: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 32, height: 32)
+                .background {
+                    Circle().fill(.regularMaterial)
+                    Circle().fill(Color.accentColor.opacity(0.08))
+                }
+                .overlay(
+                    Circle().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.7)
+                )
+                .shadow(color: .accentColor.opacity(0.14), radius: 8, y: 2)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+private struct BottomPlayerStrip: View {
+    var body: some View {
+        HStack {
+            InlinePlayerBar()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.accentColor.opacity(0.08))
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.6)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
+    }
+}
+
+private struct SearchPill: View {
+    @Binding var text: String
+    var onChange: (String) -> Void = { _ in }
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+            TextField(NeiroText.tr("搜索曲目 · 作曲家 · 专辑", "Search songs · artists · albums"), text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .focused($focused)
+                .onChange(of: text) { _, newValue in onChange(newValue) }
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                    onChange("")
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(
+            Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+        )
+    }
+}
+
+// MARK: - Content switch
+
+private struct ContentSwitch: View {
     let selection: NavigationDestination?
 
     var body: some View {
         Group {
             switch selection {
-            case .home:
-                HomeView()
-            case .songs:
-                SongsView()
-            case .albums:
-                AlbumsView()
-            case .artists:
-                ArtistsView()
-            case .playlists:
-                PlaylistsView()
-            case .playlist(let id):
-                PlaylistDetailView(playlistID: id)
-            case .none:
-                HomeView()
+            case .home:               HomeView()
+            case .songs:              SongsView()
+            case .albums:             AlbumsView()
+            case .artists:            ArtistsView()
+            case .playlists:          PlaylistsView()
+            case .playlist(let id):   PlaylistDetailView(playlistID: id)
+            case .search:             SearchView()
+            case .none:               HomeView()
             }
         }
-        .id(selection)
-        // 仅做内容淡入淡出...
         .transition(.opacity)
-        .animation(.easeInOut(duration: 0.15), value: selection)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // 把背景直接当成壁纸贴在最后面，并且让它无视安全区域铺满整个屏幕边缘
-        .background {
-            AccentTintedBackground()
-                .ignoresSafeArea()
-        }
+        .animation(.easeInOut(duration: 0.18), value: selection)
     }
 }

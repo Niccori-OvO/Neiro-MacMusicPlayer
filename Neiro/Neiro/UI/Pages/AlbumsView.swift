@@ -15,7 +15,6 @@ struct AlbumsView: View {
 
     var body: some View {
         content
-            .neiroPageBackground()
             .sheet(item: $selectedAlbum) { album in
                 AlbumDetailSheet(album: album)
             }
@@ -23,12 +22,12 @@ struct AlbumsView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PageHeader(title: "专辑", count: albums.count)
+            PageHeader(title: NeiroText.tr("专辑", "Albums"), count: albums.count)
 
             if albums.isEmpty {
                 EmptyState(systemImage: "square.stack",
-                           title: "还没有专辑",
-                           subtitle: "导入音乐后会自动按专辑归类")
+                           title: NeiroText.tr("还没有专辑", "No albums yet"),
+                           subtitle: NeiroText.tr("导入音乐后会自动按专辑归类", "Albums will be organized automatically after import"))
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
@@ -49,10 +48,24 @@ struct AlbumsView: View {
 
 struct AlbumCard: View {
     let album: Album
+    @Environment(\.modelContext) private var context
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            AlbumThumbnail(data: album.artworkData, size: 160)
+            ZStack(alignment: .topTrailing) {
+                AlbumThumbnail(data: album.artworkData, size: 160)
+                Button {
+                    LibraryActions.toggleFavorite(album, in: context)
+                } label: {
+                    Image(systemName: album.isFavorite ? "heart.fill" : "heart")
+                        .foregroundStyle(album.isFavorite ? .pink : .white.opacity(0.95))
+                        .padding(6)
+                        .background(.black.opacity(0.32), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(8)
+                .help(NeiroText.tr("喜爱", "Favorite"))
+            }
             Text(album.name)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
@@ -78,7 +91,7 @@ private struct AlbumDetailSheet: View {
                     Text(album.name).font(.title2.bold())
                     Text(album.artistName).foregroundStyle(.secondary)
                     if let y = album.year { Text("\(y)").foregroundStyle(.tertiary) }
-                    Text("\(album.tracks.count) 首")
+                    Text(NeiroText.tr("\(album.tracks.count) 首", "\(album.tracks.count) tracks"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -90,11 +103,11 @@ private struct AlbumDetailSheet: View {
                 TableColumn("#") { t in
                     Text("\(t.trackNumber ?? 0)").foregroundStyle(.secondary)
                 }.width(30)
-                TableColumn("曲名") { t in
+                TableColumn(NeiroText.tr("曲名", "Title")) { t in
                     Text(t.title)
                         .onTapGesture(count: 2) { engine.load(url: t.fileURL) }
                 }
-                TableColumn("时长") { t in
+                TableColumn(NeiroText.tr("时长", "Time")) { t in
                     Text(format(seconds: t.durationSeconds))
                         .font(.body.monospacedDigit())
                         .foregroundStyle(.secondary)
@@ -105,7 +118,7 @@ private struct AlbumDetailSheet: View {
         .frame(width: 560, height: 480)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("关闭") { dismiss() }
+                Button(NeiroText.tr("关闭", "Close")) { dismiss() }
             }
         }
     }

@@ -42,8 +42,8 @@ struct ImportView: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("导入音乐").font(.title2.bold())
-                Text("把文件夹或音频文件拖到下方区域")
+                Text(NeiroText.tr("导入音乐", "Import Music")).font(.title2.bold())
+                Text(NeiroText.tr("把文件夹或音频文件拖到下方区域", "Drop folders or audio files below"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -61,11 +61,11 @@ struct ImportView: View {
                 Text("\(n)").font(.caption.monospacedDigit())
             }
         case .done(let i, let u, let s):
-            Label("\(i + u) 首已入库", systemImage: "checkmark.seal.fill")
+            Label(NeiroText.tr("\(i + u) 首已入库", "\(i + u) imported"), systemImage: "checkmark.seal.fill")
                 .font(.caption)
                 .foregroundStyle(.green)
                 .onAppear {
-                    resultMessage = "新增 \(i)，更新 \(u)，跳过 \(s)"
+                    resultMessage = NeiroText.tr("新增 \(i)，更新 \(u)，跳过 \(s)", "Added \(i), updated \(u), skipped \(s)")
                 }
         case .error(let m):
             Label(m, systemImage: "exclamationmark.triangle.fill")
@@ -100,10 +100,10 @@ struct ImportView: View {
                     .symbolEffect(.bounce, value: isTargeted)
                     .contentTransition(.symbolEffect(.replace))
 
-                Text(isTargeted ? "松开导入" : "拖入这里")
+                Text(isTargeted ? NeiroText.tr("松开导入", "Release to import") : NeiroText.tr("拖入这里", "Drop files here"))
                     .font(.title3.weight(.medium))
 
-                Text("支持的格式：FLAC · ALAC · WAV · AIFF · M4A · MP3 · CAF")
+                Text(NeiroText.tr("支持的格式：FLAC · ALAC · WAV · AIFF · M4A · MP3 · CAF", "Supported: FLAC · ALAC · WAV · AIFF · M4A · MP3 · CAF"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -126,19 +126,19 @@ struct ImportView: View {
             Button {
                 chooseWithPanel()
             } label: {
-                Label("从访达选取…", systemImage: "folder")
+                Label(NeiroText.tr("从访达选取…", "Choose from Finder…"), systemImage: "folder")
             }
             .controlSize(.large)
 
             Spacer()
 
             if case .scanning = library.state {
-                Text("扫描中…")
+                Text(NeiroText.tr("扫描中…", "Scanning…"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Button("完成") { dismiss() }
+            Button(NeiroText.tr("完成", "Done")) { dismiss() }
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
         }
@@ -173,7 +173,7 @@ struct ImportView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
-        panel.prompt = "导入"
+        panel.prompt = NeiroText.tr("导入", "Import")
         panel.allowedContentTypes = supportedTypes
         if panel.runModal() == .OK {
             let urls = panel.urls

@@ -42,14 +42,14 @@ struct LyricsPanel: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("歌词").font(.headline)
+                Text(NeiroText.tr("歌词", "Lyrics")).font(.headline)
                 if let url = lyricFileURL {
                     Text(url.lastPathComponent)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 } else {
-                    Text("Phase 3 将接入解析与滚动同步")
+                    Text(NeiroText.tr("Phase 3 将接入解析与滚动同步", "Parsing and synced scrolling will arrive in Phase 3"))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -84,9 +84,9 @@ struct LyricsPanel: View {
                     .font(.system(size: 28, weight: .light))
                     .foregroundStyle(isTargeted ? Color.accentColor : .secondary)
                     .symbolEffect(.bounce, value: isTargeted)
-                Text(isTargeted ? "松开导入" : "拖入 .lrc")
+                Text(isTargeted ? NeiroText.tr("松开导入", "Release to import") : NeiroText.tr("拖入 .lrc", "Drop .lrc here"))
                     .font(.callout)
-                Text("或者点击选取")
+                Text(NeiroText.tr("或者点击选取", "or click to choose"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -112,17 +112,21 @@ struct LyricsPanel: View {
     @ViewBuilder
     private var preview: some View {
         if let raw = rawText {
+            let allLines = raw.components(separatedBy: .newlines)
+            let lines = Array(allLines.prefix(80).enumerated())
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(raw.split(separator: "\n").prefix(40)).indices, id: \.self) { i in
-                        Text(String(raw.split(separator: "\n").prefix(40)[i]))
+                    ForEach(lines, id: \.offset) { _, line in
+                        Text(line)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    if raw.split(separator: "\n").count > 40 {
-                        Text("…")
+                    if allLines.count > 80 {
+                        Text(NeiroText.tr("… 共 \(allLines.count) 行", "… \(allLines.count) lines"))
+                            .font(.caption)
                             .foregroundStyle(.tertiary)
+                            .padding(.top, 4)
                     }
                 }
                 .padding(.vertical, 8)
@@ -133,7 +137,7 @@ struct LyricsPanel: View {
                 Image(systemName: "music.quarternote.3")
                     .font(.title)
                     .foregroundStyle(.tertiary)
-                Text("解析与播放同步将在 Phase 3 上线")
+                Text(NeiroText.tr("解析与播放同步将在 Phase 3 上线", "Synced lyric playback will arrive in Phase 3"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -149,7 +153,7 @@ struct LyricsPanel: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "导入"
+        panel.prompt = NeiroText.tr("导入", "Import")
         if let lrc = UTType(filenameExtension: "lrc") {
             panel.allowedContentTypes = [lrc, .plainText]
         } else {
@@ -161,10 +165,19 @@ struct LyricsPanel: View {
     }
 
     private func acceptLyricFile(_ url: URL) {
+        // 在 sandbox 下读 .lrc 也要 startAccessing
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
         lyricFileURL = url
-        rawText = (try? String(contentsOf: url, encoding: .utf8))
-            ?? (try? String(contentsOf: url, encoding: .gbk_18030_2000))
-            ?? (try? String(contentsOf: url))
+        // 先按 UTF-8 试，失败再按系统检测的编码
+        if let utf8 = try? String(contentsOf: url, encoding: .utf8) {
+            rawText = utf8
+        } else if let auto = try? String(contentsOf: url) {
+            rawText = auto
+        } else if let data = try? Data(contentsOf: url) {
+            rawText = String(decoding: data, as: UTF8.self)
+        }
     }
 
     private func loadURL(from provider: NSItemProvider) async -> URL? {
@@ -174,13 +187,4 @@ struct LyricsPanel: View {
             }
         }
     }
-}
-
-// 提供一个 GBK 编码常量（中文歌词常见编码）
-private extension String.Encoding {
-    static let gbk_18030_2000: String.Encoding = {
-        let cfEnc = CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
-        let raw = CFStringConvertEncodingToNSStringEncoding(cfEnc)
-        return String.Encoding(rawValue: raw)
-    }()
 }

@@ -57,6 +57,8 @@ public final class AudioEngine {
     private var seekOffsetFrames: AVAudioFramePosition = 0
     /// 当前播放是否处于"调度结束"的清理过程，避免完成回调和用户操作打架。
     private var isFinishing = false
+    /// 每次重新 schedule 都递增，避免旧的 completion 回调影响新播放状态。
+    private var scheduleGeneration: UInt64 = 0
 
     private var securityScopedURL: URL?
     private var positionTimer: Timer?
@@ -122,10 +124,25 @@ public final class AudioEngine {
     }
 
     public func play() {
-        guard file != nil, state == .paused else { return }
+        guard let f = file, state == .paused else { return }
         do {
             try startEngineIfNeeded()
-            player.play()
+            // 续播：若 player 内部还有未播完的 buffer 直接 play() 续播。
+            // 若 buffer 已经被消费完（罕见，但 dataConsumed 模式会发生），
+            // 按当前 currentTime 重新 schedule 后再 play。
+            if !player.isPlaying {
+                if player.engine != nil {
+                    player.play()
+                }
+                if !player.isPlaying {
+                    // 兜底：用当前时间重新 schedule
+                    let sr = f.processingFormat.sampleRate
+                    let frame = AVAudioFramePosition(currentTime * sr)
+                    scheduleAndPlay(from: frame, autoPlay: true)
+                }
+            } else {
+                player.play()
+            }
             state = .playing
             startPositionTimer()
         } catch {
@@ -159,7 +176,10 @@ public final class AudioEngine {
         guard let f = file else { return }
         let wasPlaying = (state == .playing)
         let sr = f.processingFormat.sampleRate
-        let frame = AVAudioFramePosition(max(0, min(seconds, duration)) * sr)
+        let safeUpperBound = max(0, duration - 0.05)
+        let clamped = max(0, min(seconds, safeUpperBound))
+        let frame = AVAudioFramePosition(clamped * sr)
+        currentTime = clamped
         player.stop()
         do {
             try startEngineIfNeeded()
@@ -187,15 +207,20 @@ public final class AudioEngine {
             return
         }
         seekOffsetFrames = startFrame
+        scheduleGeneration &+= 1
+        let generation = scheduleGeneration
 
+        // 关键：dataPlayedBack 表示样本真正被设备播完才触发回调，
+        // pause() 不会因为预读 buffer 消费而误触发把状态切回 idle。
         player.scheduleSegment(f,
                                startingFrame: startFrame,
                                frameCount: remaining,
-                               at: nil) {
-            // 完成回调来自后台线程；用一个 Task 跳回 MainActor。
+                               at: nil,
+                               completionCallbackType: .dataPlayedBack) { _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard !self.isFinishing else { return }
+                guard generation == self.scheduleGeneration else { return }
                 self.handlePlaybackFinished()
             }
         }
