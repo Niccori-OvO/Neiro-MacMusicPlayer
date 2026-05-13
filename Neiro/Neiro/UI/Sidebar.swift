@@ -24,8 +24,8 @@ struct Sidebar: View {
         VStack(spacing: 0) {
             WindowControlsRow()
                 .padding(.horizontal, 14)
-                .padding(.top, 4)
-                .padding(.bottom, 2)
+                .padding(.top, 9)
+                .padding(.bottom, 4)
 
             List(selection: $selection) {
             Section {
@@ -41,7 +41,7 @@ struct Sidebar: View {
                 ForEach(playlists) { pl in
                     Label {
                         HStack {
-                            Text(pl.name).lineLimit(1)
+                            Text(pl.displayName).lineLimit(1)
                             Spacer()
                             if pl.tracks.count > 0 {
                                 Text("\(pl.tracks.count)")

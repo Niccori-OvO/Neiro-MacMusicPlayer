@@ -263,6 +263,7 @@ private struct LibrarySettings: View {
     @Environment(LibraryService.self) private var library
     @Environment(\.openWindow) private var openWindow
     @Environment(\.modelContext) private var context
+    @AppStorage(NeiroTheme.copyOnImportKey) private var copyOnImport: Bool = true
     @State private var showClearConfirm = false
 
     var body: some View {
@@ -284,6 +285,16 @@ private struct LibrarySettings: View {
             }
 
             Section(NeiroText.tr("导入", "Import")) {
+                Toggle(isOn: $copyOnImport) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(NeiroText.tr("导入时复制到 Neiro 文件夹", "Copy to Neiro folder on import"))
+                        Text(NeiroText.tr("开：源文件删除后仍能播放（推荐）  关：仅记录路径，源文件丢失会失效",
+                                          "On: keeps working if source is deleted (recommended). Off: only references original location."))
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 statusRow
 
                 Button {
@@ -295,6 +306,14 @@ private struct LibrarySettings: View {
             }
 
             Section(NeiroText.tr("数据存放位置", "Data Location")) {
+                LabeledContent(NeiroText.tr("音乐库", "Music Library")) {
+                    Text(NeiroPaths.musicLibrary.path)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                }
                 LabeledContent(NeiroText.tr("App 数据库", "App Database")) {
                     Text(NeiroPaths.appSupport.path)
                         .font(.callout)
@@ -303,10 +322,19 @@ private struct LibrarySettings: View {
                         .lineLimit(2)
                         .truncationMode(.middle)
                 }
-                Button {
-                    NSWorkspace.shared.open(NeiroPaths.appSupport)
-                } label: {
-                    Label(NeiroText.tr("在访达打开", "Open in Finder"), systemImage: "folder")
+                HStack {
+                    Button {
+                        NSWorkspace.shared.open(NeiroPaths.musicLibrary)
+                    } label: {
+                        Label(NeiroText.tr("打开音乐库", "Open Music Library"),
+                              systemImage: "folder.fill")
+                    }
+                    Button {
+                        NSWorkspace.shared.open(NeiroPaths.appSupport)
+                    } label: {
+                        Label(NeiroText.tr("打开数据目录", "Open Data Folder"),
+                              systemImage: "folder")
+                    }
                 }
             }
 
@@ -371,7 +399,7 @@ private struct AboutSettings: View {
                 .font(.system(size: 64))
                 .foregroundStyle(.tint)
             Text("Neiro").font(.largeTitle.bold())
-            Text("Version 0.2 · Phase 2 in progress").foregroundStyle(.secondary)
+            Text("Version 0.2 beta v1.0").foregroundStyle(.secondary)
             Divider().frame(width: 240)
             VStack(alignment: .leading, spacing: 8) {
                 Label("MIT License", systemImage: "doc.text")

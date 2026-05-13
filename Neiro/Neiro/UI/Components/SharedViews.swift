@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Page header
 
@@ -77,20 +78,103 @@ public extension View {
 private struct NeiroPageBackground: ViewModifier {
     @AppStorage(NeiroTheme.backgroundImagePathKey) private var imagePath: String = ""
     @AppStorage(NeiroTheme.backgroundOpacityKey) private var opacity: Double = 0.35
+    @AppStorage(NeiroTheme.backgroundEnabledKey) private var enabled: Bool = true
+
+    private var artworkVisible: Bool {
+        !imagePath.isEmpty && enabled
+    }
 
     func body(content: Content) -> some View {
         ZStack(alignment: .bottomTrailing) {
             content
-            if !imagePath.isEmpty {
+                .environment(\.neiroArtworkVisible, artworkVisible)
+            if artworkVisible {
                 CharacterArtworkLayer(imagePath: imagePath, opacity: opacity)
                     .allowsHitTesting(false)
-                    .padding(.trailing, 24)
-                    .padding(.bottom, 24)
+                    .transition(.opacity)
             }
+        }
+        .animation(.easeInOut(duration: 0.25), value: artworkVisible)
+    }
+}
+
+// MARK: - 立绘开关 / 右键菜单 helper
+
+private struct NeiroArtworkVisibleKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
+
+public extension EnvironmentValues {
+    var neiroArtworkVisible: Bool {
+        get { self[NeiroArtworkVisibleKey.self] }
+        set { self[NeiroArtworkVisibleKey.self] = newValue }
+    }
+}
+
+/// 列表区右键菜单的统一立绘开关组（任何 view 加 .neiroArtworkMenu() 即可）
+public extension View {
+    func neiroArtworkMenu() -> some View {
+        modifier(NeiroArtworkMenu())
+    }
+}
+
+private struct NeiroArtworkMenu: ViewModifier {
+    @AppStorage(NeiroTheme.backgroundImagePathKey) private var imagePath: String = ""
+    @AppStorage(NeiroTheme.backgroundEnabledKey) private var enabled: Bool = true
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            if !imagePath.isEmpty {
+                Button {
+                    enabled.toggle()
+                } label: {
+                    if enabled {
+                        Label(NeiroText.tr("隐藏立绘", "Hide Character Art"),
+                              systemImage: "eye.slash")
+                    } else {
+                        Label(NeiroText.tr("显示立绘", "Show Character Art"),
+                              systemImage: "eye")
+                    }
+                }
+                Button {
+                    chooseImage()
+                } label: {
+                    Label(NeiroText.tr("更换立绘…", "Change Character Art…"),
+                          systemImage: "photo")
+                }
+                Button(role: .destructive) {
+                    imagePath = ""
+                } label: {
+                    Label(NeiroText.tr("清除立绘", "Clear Character Art"),
+                          systemImage: "trash")
+                }
+            } else {
+                Button {
+                    chooseImage()
+                } label: {
+                    Label(NeiroText.tr("导入立绘…", "Import Character Art…"),
+                          systemImage: "photo.badge.plus")
+                }
+            }
+        }
+    }
+
+    private func chooseImage() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.image, .png, .jpeg]
+        panel.prompt = NeiroText.tr("选择", "Choose")
+        if panel.runModal() == .OK, let url = panel.url {
+            imagePath = url.path
+            enabled = true
         }
     }
 }
 
+/// 立绘图层：保持原图比例，底边对齐父容器底部，靠右。
+/// 高度最多取父容器的 78%，宽度按比例计算。
 struct CharacterArtworkLayer: View {
     let imagePath: String
     let opacity: Double
@@ -98,22 +182,28 @@ struct CharacterArtworkLayer: View {
     var body: some View {
         if let img = NSImage(contentsOfFile: imagePath) {
             GeometryReader { geo in
-                let maxH = min(geo.size.height * 0.85, 720)
-                let maxW = min(geo.size.width * 0.40, 480)
+                let maxH = geo.size.height * 0.78
+                let maxW = geo.size.width * 0.30
                 let aspect = img.size.width / max(img.size.height, 1)
+                // 高度优先（保证一定纵向高度），按比例算宽，必要时按 maxW 收缩
+                let h0 = maxH
+                let w0 = h0 * aspect
                 let (w, h): (CGFloat, CGFloat) = {
-                    let byHeight = (maxH * aspect, maxH)
-                    let byWidth  = (maxW, maxW / aspect)
-                    return byHeight.0 <= maxW ? byHeight : byWidth
+                    if w0 <= maxW { return (w0, h0) }
+                    let w1 = maxW
+                    let h1 = w1 / aspect
+                    return (w1, h1)
                 }()
                 Image(nsImage: img)
                     .resizable()
                     .scaledToFit()
                     .frame(width: w, height: h)
                     .opacity(opacity)
-                    .position(x: geo.size.width - w / 2,
+                    // 底边贴 container 底，靠右
+                    .position(x: geo.size.width - w / 2 - 6,
                               y: geo.size.height - h / 2)
                     .animation(.easeInOut(duration: 0.35), value: imagePath)
+                    .animation(.easeInOut(duration: 0.25), value: opacity)
             }
         }
     }
@@ -126,7 +216,11 @@ struct AlbumThumbnail: View {
     let size: CGFloat
 
     var body: some View {
-        Group {
+        ZStack {
+            // 为带透明通道的封面提供底色，避免出现“切边/缺角”视觉问题。
+            RoundedRectangle(cornerRadius: max(4, size * 0.08), style: .continuous)
+                .fill(Color.black.opacity(0.18))
+
             if let data, let img = NSImage(data: data) {
                 Image(nsImage: img)
                     .resizable()

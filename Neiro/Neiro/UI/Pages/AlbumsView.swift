@@ -37,8 +37,11 @@ struct AlbumsView: View {
                                 .onTapGesture { selectedAlbum = album }
                         }
                     }
-                    .padding(.top, 4)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 8)
                 }
+                .scrollClipDisabled()
                 .scrollContentBackground(.hidden)
             }
         }
@@ -53,7 +56,10 @@ struct AlbumCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topTrailing) {
-                AlbumThumbnail(data: album.artworkData, size: 160)
+                ZStack {
+                    AlbumThumbnail(data: album.artworkData, size: 152)
+                }
+                .frame(width: 160, height: 160)
                 Button {
                     LibraryActions.toggleFavorite(album, in: context)
                 } label: {
@@ -105,7 +111,12 @@ private struct AlbumDetailSheet: View {
                 }.width(30)
                 TableColumn(NeiroText.tr("曲名", "Title")) { t in
                     Text(t.title)
-                        .onTapGesture(count: 2) { engine.load(url: t.fileURL) }
+                        .onTapGesture(count: 2) {
+                            let sorted = album.tracks.sorted { ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
+                            let urls = sorted.map { $0.fileURL }
+                            let idx = sorted.firstIndex(where: { $0.id == t.id }) ?? 0
+                            engine.playQueue(urls, startAt: idx, shuffle: engine.isShuffleEnabled)
+                        }
                 }
                 TableColumn(NeiroText.tr("时长", "Time")) { t in
                     Text(format(seconds: t.durationSeconds))

@@ -43,6 +43,15 @@ public final class LibraryService {
     /// - 目录 URL：递归 import 该目录下所有支持的音频文件
     /// 不会扫描传入 URL 之外的任何路径。
     public func importItems(_ items: [URL]) async {
+        // 沙箱：扫描和生成 bookmark 都需要根 URL 的 security scope 保持开启
+        var startedAccess: [URL] = []
+        for item in items where item.startAccessingSecurityScopedResource() {
+            startedAccess.append(item)
+        }
+        defer {
+            for url in startedAccess { url.stopAccessingSecurityScopedResource() }
+        }
+
         state = .scanning(found: 0)
         let context = ModelContext(container)
 
@@ -124,7 +133,20 @@ public final class LibraryService {
     private enum ImportResult { case imported, updated, skipped }
 
     private func importOne(url: URL, into context: ModelContext) async throws -> ImportResult {
-        let path = url.path
+        // 1. 如果"复制到 Neiro 文件夹"开关启用，把文件复制过去；否则就用原路径
+        let copyOn = UserDefaults.standard.object(forKey: NeiroTheme.copyOnImportKey) as? Bool ?? true
+        let effectiveURL: URL = {
+            if copyOn, let copied = copyToLibrary(url) {
+                return copied
+            }
+            return url
+        }()
+
+        let path = effectiveURL.path
+        let bookmark = makeBookmark(for: effectiveURL)
+
+        // 同名 .lrc 自动关联（在源文件目录里找 → 复制到 Lyrics/）
+        let (lyricPath, lyricBookmark) = findAndCopyLyric(for: url, copy: copyOn)
 
         // 已有记录？
         let descriptor = FetchDescriptor<Track>(predicate: #Predicate { $0.filePath == path })
@@ -145,6 +167,16 @@ public final class LibraryService {
             if track.discNumber != meta.discNumber { track.discNumber = meta.discNumber; didChange = true }
             if track.year != meta.year { track.year = meta.year; didChange = true }
             if track.genre != meta.genre { track.genre = meta.genre; didChange = true }
+            // bookmark 没有就补一个（兼容旧库）
+            if track.bookmarkData == nil, let bookmark {
+                track.bookmarkData = bookmark
+                didChange = true
+            }
+            if track.lyricFilePath == nil, let lyricPath {
+                track.lyricFilePath = lyricPath
+                track.lyricBookmarkData = lyricBookmark
+                didChange = true
+            }
             return didChange ? .updated : .skipped
         }
 
@@ -161,6 +193,9 @@ public final class LibraryService {
         track.discNumber = meta.discNumber
         track.year = meta.year
         track.genre = meta.genre
+        track.bookmarkData = bookmark
+        track.lyricFilePath = lyricPath
+        track.lyricBookmarkData = lyricBookmark
 
         // Artist
         let artistName = meta.artist.isEmpty ? "未知作曲家" : meta.artist
@@ -177,6 +212,93 @@ public final class LibraryService {
 
         context.insert(track)
         return .imported
+    }
+
+    /// 把外部音频复制到 ~/Music/Neiro/，处理重名。失败返回 nil（沙箱写不了或目标占用）。
+    private func copyToLibrary(_ src: URL) -> URL? {
+        let fm = FileManager.default
+        let libDir = NeiroPaths.musicLibrary
+        try? fm.createDirectory(at: libDir, withIntermediateDirectories: true)
+
+        let scoped = src.startAccessingSecurityScopedResource()
+        defer { if scoped { src.stopAccessingSecurityScopedResource() } }
+
+        let baseName = src.deletingPathExtension().lastPathComponent
+        let ext = src.pathExtension
+        var target = libDir.appending(path: src.lastPathComponent)
+        var index = 1
+        while fm.fileExists(atPath: target.path) {
+            // 已存在则比较文件大小判断是否同一文件
+            if let srcSize = (try? src.resourceValues(forKeys: [.fileSizeKey]).fileSize),
+               let dstSize = (try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize),
+               srcSize == dstSize {
+                return target // 视为已导入过，直接复用
+            }
+            target = libDir.appending(path: "\(baseName) (\(index)).\(ext)")
+            index += 1
+        }
+        do {
+            try fm.copyItem(at: src, to: target)
+            return target
+        } catch {
+            Self.log.warning("copy to library failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// 找音频文件同目录下的同名 .lrc；如果 copy=true 同时复制到 Lyrics/。
+    /// 返回 (路径, bookmark) 给 Track 存。
+    private func findAndCopyLyric(for src: URL, copy: Bool) -> (String?, Data?) {
+        let fm = FileManager.default
+        let candidate = src.deletingPathExtension().appendingPathExtension("lrc")
+
+        let scoped = src.startAccessingSecurityScopedResource()
+        defer { if scoped { src.stopAccessingSecurityScopedResource() } }
+
+        guard fm.fileExists(atPath: candidate.path) else { return (nil, nil) }
+
+        if copy {
+            let lyricsDir = NeiroPaths.lyricsLibrary
+            var target = lyricsDir.appending(path: candidate.lastPathComponent)
+            var i = 1
+            while fm.fileExists(atPath: target.path) {
+                if let srcSize = (try? candidate.resourceValues(forKeys: [.fileSizeKey]).fileSize),
+                   let dstSize = (try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize),
+                   srcSize == dstSize {
+                    return (target.path, makeBookmark(for: target))
+                }
+                target = lyricsDir.appending(path: "\(candidate.deletingPathExtension().lastPathComponent) (\(i)).lrc")
+                i += 1
+            }
+            do {
+                try fm.copyItem(at: candidate, to: target)
+                return (target.path, makeBookmark(for: target))
+            } catch {
+                Self.log.warning("copy lyric failed: \(error.localizedDescription, privacy: .public)")
+                return (candidate.path, makeBookmark(for: candidate))
+            }
+        } else {
+            return (candidate.path, makeBookmark(for: candidate))
+        }
+    }
+
+    /// 给一个用户选中的 URL 生成 security-scoped bookmark。
+    /// 必须在 URL 仍然 startAccessing 期间调用（fileImporter 给的 URL 立刻调即可）。
+    /// 非沙箱构建下也能用（普通 bookmark）。
+    nonisolated private func makeBookmark(for url: URL) -> Data? {
+        // 不一定需要再 startAccessing，因为 ImportView 已经做过；
+        // 但 enumerator 给的子文件 URL 没有，必须先打开。
+        let didStart = url.startAccessingSecurityScopedResource()
+        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+        do {
+            return try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        } catch {
+            return nil
+        }
     }
 
     private func findOrCreateArtist(name: String, in context: ModelContext) throws -> Artist {

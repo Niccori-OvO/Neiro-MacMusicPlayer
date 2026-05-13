@@ -40,6 +40,15 @@ public final class Track {
     /// 添加进库时间
     public var addedAt: Date
 
+    /// 沙箱下持久化访问权限用的 security-scoped bookmark。
+    /// 重启 App 后用它解析回带 scope 的 URL，再 startAccessing 才能读。
+    @Attribute(.externalStorage) public var bookmarkData: Data?
+
+    /// 关联 .lrc 歌词文件路径（可选）
+    public var lyricFilePath: String?
+    /// 歌词文件的 security-scoped bookmark
+    @Attribute(.externalStorage) public var lyricBookmarkData: Data?
+
     /// inverse 写在 Album/Artist/Playlist 的 to-many 侧
     public var album: Album?
     public var artist: Artist?
@@ -62,8 +71,42 @@ public final class Track {
         self.addedAt = Date()
     }
 
-    /// URL（运行期构造，不持久化）
-    public var fileURL: URL { URL(fileURLWithPath: filePath) }
+    /// 拿到可读的文件 URL。
+    /// 沙箱开启时，重启 App 后 fileImporter 给的 URL 失效，必须用 bookmark resolve。
+    /// resolve 后返回的 URL 是 security-scoped，调用方 startAccessingSecurityScopedResource() 后才能读。
+    public var fileURL: URL {
+        if let bookmark = bookmarkData {
+            var isStale = false
+            if let restored = try? URL(
+                resolvingBookmarkData: bookmark,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                return restored
+            }
+        }
+        return URL(fileURLWithPath: filePath)
+    }
+
+    /// 关联歌词的 URL，bookmark 优先。
+    public var lyricURL: URL? {
+        if let bookmark = lyricBookmarkData {
+            var isStale = false
+            if let restored = try? URL(
+                resolvingBookmarkData: bookmark,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                return restored
+            }
+        }
+        if let path = lyricFilePath {
+            return URL(fileURLWithPath: path)
+        }
+        return nil
+    }
 }
 
 // MARK: - Album
@@ -142,6 +185,17 @@ public final class Playlist {
         self.kindRaw = kind.rawValue
         self.createdAt = Date()
         self.sortOrder = sortOrder
+    }
+
+    /// 显示名：默认 playlist 跟随 NeiroLanguage 翻译，自建 playlist 直接用 name。
+    public var displayName: String {
+        switch kind {
+        case .favoriteTracks:  return NeiroText.tr("喜爱歌曲", "Favorite Songs")
+        case .favoriteAlbums:  return NeiroText.tr("喜爱专辑", "Favorite Albums")
+        case .favoriteArtists: return NeiroText.tr("喜爱作曲家", "Favorite Artists")
+        case .anime:           return NeiroText.tr("二次元企划", "Anime")
+        case .userCreated:     return name
+        }
     }
 }
 

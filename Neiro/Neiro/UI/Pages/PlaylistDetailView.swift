@@ -22,6 +22,7 @@ struct PlaylistDetailView: View {
     var body: some View {
         content
             .neiroPageBackground()
+            .neiroArtworkMenu()
             .sheet(isPresented: $showAddSheet) {
                 if let pl = playlist {
                     AddTracksSheet(playlist: pl)
@@ -74,11 +75,32 @@ struct PlaylistDetailView: View {
                 Text(badgeText(for: pl.kind))
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
-                Text(pl.name)
+                Text(pl.displayName)
                     .font(.largeTitle.bold())
                 Text(NeiroText.tr("\(pl.tracks.count) 首歌", "\(pl.tracks.count) songs"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    Button {
+                        playAll(pl, shuffle: false)
+                    } label: {
+                        Label(NeiroText.tr("播放", "Play"), systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(pl.tracks.isEmpty)
+
+                    Button {
+                        playAll(pl, shuffle: true)
+                    } label: {
+                        Label(NeiroText.tr("随机播放", "Shuffle"), systemImage: "shuffle")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .disabled(pl.tracks.isEmpty)
+                }
+                .padding(.top, 4)
             }
             Spacer()
 
@@ -93,32 +115,81 @@ struct PlaylistDetailView: View {
         }
     }
 
+    private func playAll(_ pl: Playlist, shuffle: Bool) {
+        let urls = pl.tracks.map { $0.fileURL }
+        guard !urls.isEmpty else { return }
+        engine.playQueue(urls, startAt: 0, shuffle: shuffle)
+    }
+
     @ViewBuilder
     private func tracksList(_ pl: Playlist) -> some View {
         Table(pl.tracks) {
             TableColumn(NeiroText.tr("曲名", "Title")) { t in
-                HStack {
+                HStack(spacing: 10) {
                     AlbumThumbnail(data: t.album?.artworkData, size: 32)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(t.title)
+                        Text(t.title).lineLimit(1)
                         Text(t.artist?.name ?? NeiroText.tr("未知作曲家", "Unknown Artist"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
                 .contentShape(Rectangle())
-                .onTapGesture(count: 2) { engine.load(url: t.fileURL) }
+                .onTapGesture(count: 2) {
+                    let urls = pl.tracks.map { $0.fileURL }
+                    let idx = pl.tracks.firstIndex(where: { $0.id == t.id }) ?? 0
+                    engine.playQueue(urls, startAt: idx, shuffle: engine.isShuffleEnabled)
+                }
+                .contextMenu {
+                    Button {
+                        let urls = pl.tracks.map { $0.fileURL }
+                        let idx = pl.tracks.firstIndex(where: { $0.id == t.id }) ?? 0
+                        engine.playQueue(urls, startAt: idx, shuffle: engine.isShuffleEnabled)
+                    } label: {
+                        Label(NeiroText.tr("播放", "Play"), systemImage: "play.fill")
+                    }
+                    Button {
+                        LibraryActions.toggleFavorite(t, in: context)
+                    } label: {
+                        Label(t.isFavorite
+                              ? NeiroText.tr("取消喜爱", "Unfavorite")
+                              : NeiroText.tr("喜爱", "Favorite"),
+                              systemImage: t.isFavorite ? "heart.slash" : "heart")
+                    }
+                    if pl.kind == .userCreated {
+                        Divider()
+                        Button(role: .destructive) {
+                            remove(track: t, from: pl)
+                        } label: {
+                            Label(NeiroText.tr("从此 playlist 移除", "Remove from playlist"),
+                                  systemImage: "minus.circle")
+                        }
+                    }
+                    Divider()
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([t.fileURL])
+                    } label: {
+                        Label(NeiroText.tr("在访达中显示", "Show in Finder"), systemImage: "folder")
+                    }
+                }
             }
+            .width(min: 220, ideal: 360, max: 440)
+
             TableColumn(NeiroText.tr("专辑", "Album")) { t in
-                Text(t.album?.name ?? "—").foregroundStyle(.secondary)
+                Text(t.album?.name ?? "—")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .width(min: 140, ideal: 220)
+            .width(min: 140, ideal: 220, max: 280)
+
             TableColumn(NeiroText.tr("时长", "Time")) { t in
                 Text(timeString(t.durationSeconds))
                     .font(.body.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
-            .width(60)
+            .width(min: 60, ideal: 70, max: 80)
+
             TableColumn("") { t in
                 if pl.kind == .userCreated {
                     Button {
@@ -140,6 +211,10 @@ struct PlaylistDetailView: View {
                 }
             }
             .width(40)
+
+            // Spacer column 吃右侧空间，让前面 columns 靠左
+            TableColumn("") { _ in Color.clear }
+                .width(min: 0, ideal: 200, max: 999)
         }
         .scrollContentBackground(.hidden)
     }
@@ -260,7 +335,7 @@ private struct AddTracksSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("\(NeiroText.tr("添加到", "Add to")) 「\(playlist.name)」").font(.headline)
+                Text("\(NeiroText.tr("添加到", "Add to")) 「\(playlist.displayName)」").font(.headline)
                 Spacer()
                 Text(NeiroText.tr("已选 \(selectedIDs.count)", "Selected \(selectedIDs.count)"))
                     .font(.caption.monospacedDigit())

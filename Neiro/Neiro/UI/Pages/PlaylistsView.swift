@@ -44,7 +44,6 @@ struct PlaylistsView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.top, 4)
-                    .padding(.trailing, bgImagePath.isEmpty ? 8 : 60)
                 }
                 .scrollContentBackground(.hidden)
                 .scrollIndicators(.hidden)
@@ -77,10 +76,11 @@ struct PlaylistsView: View {
 
 private struct PlaylistCard: View {
     let playlist: Playlist
+    @Environment(AudioEngine.self) private var engine
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ZStack {
+            ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(LinearGradient(
                         colors: gradient,
@@ -88,11 +88,28 @@ private struct PlaylistCard: View {
                 Image(systemName: icon)
                     .font(.system(size: 36, weight: .light))
                     .foregroundStyle(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if !playlist.tracks.isEmpty {
+                    Button {
+                        let urls = playlist.tracks.map { $0.fileURL }
+                        engine.playQueue(urls, startAt: 0, shuffle: true)
+                    } label: {
+                        Image(systemName: "shuffle")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(6)
+                            .background(.black.opacity(0.32), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8)
+                    .help(NeiroText.tr("随机播放此 playlist", "Shuffle this playlist"))
+                }
             }
             .frame(height: 130)
             .shadow(radius: 3, y: 1)
 
-            Text(playlist.name)
+            Text(playlist.displayName)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
             Text(NeiroText.tr("\(playlist.tracks.count) 首", "\(playlist.tracks.count) tracks"))

@@ -26,7 +26,7 @@ struct RootView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.openWindow) private var openWindow
 
-    private let sidebarWidth: CGFloat = 230
+    private let sidebarWidth: CGFloat = 238
     private let lyricsWidth: CGFloat = 320
     private let outerPadding: CGFloat = 10
     private let verticalGap: CGFloat = 10
@@ -157,7 +157,7 @@ private struct MainToolbar: View {
             .frame(width: 240)
         }
         .padding(.horizontal, 14)
-        .padding(.top, 6)
+        .padding(.top, 11)
         .padding(.bottom, 6)
     }
 

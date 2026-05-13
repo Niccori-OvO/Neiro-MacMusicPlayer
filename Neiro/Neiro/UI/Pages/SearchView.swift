@@ -137,7 +137,11 @@ struct SearchView: View {
                     }
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { engine.load(url: t.fileURL) }
+                    .onTapGesture(count: 2) {
+                        let urls = matchedTracks.map { $0.fileURL }
+                        let idx = matchedTracks.firstIndex(where: { $0.id == t.id }) ?? 0
+                        engine.playQueue(urls, startAt: idx, shuffle: engine.isShuffleEnabled)
+                    }
                     Divider().opacity(0.4)
                 }
                 if matchedTracks.count > 20 {

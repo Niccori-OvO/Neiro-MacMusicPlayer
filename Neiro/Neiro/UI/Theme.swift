@@ -107,6 +107,12 @@ public enum NeiroTheme {
     /// 背景立绘透明度
     public static let backgroundOpacityKey = "NeiroBackgroundOpacity"
 
+    /// 立绘是否启用（用户可临时切开关，不丢失图片路径）
+    public static let backgroundEnabledKey = "NeiroBackgroundEnabled"
+
+    /// 导入时复制到 ~/Music/Neiro/（默认开启）
+    public static let copyOnImportKey = "NeiroCopyOnImport"
+
     /// 圆角强度（卡片 / 按钮 等共用的基础半径）
     public static let cornerRadiusKey = "NeiroCornerRadius"
 

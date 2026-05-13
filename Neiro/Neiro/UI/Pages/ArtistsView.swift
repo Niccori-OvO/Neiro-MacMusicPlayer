@@ -74,7 +74,12 @@ private struct ArtistDetailSheet: View {
             Table(artist.tracks.sorted { $0.title < $1.title }) {
                 TableColumn(NeiroText.tr("曲名", "Title")) { t in
                     Text(t.title)
-                        .onTapGesture(count: 2) { engine.load(url: t.fileURL) }
+                        .onTapGesture(count: 2) {
+                            let sorted = artist.tracks.sorted { $0.title < $1.title }
+                            let urls = sorted.map { $0.fileURL }
+                            let idx = sorted.firstIndex(where: { $0.id == t.id }) ?? 0
+                            engine.playQueue(urls, startAt: idx, shuffle: engine.isShuffleEnabled)
+                        }
                 }
                 TableColumn(NeiroText.tr("专辑", "Album")) { t in
                     Text(t.album?.name ?? "—").foregroundStyle(.secondary)

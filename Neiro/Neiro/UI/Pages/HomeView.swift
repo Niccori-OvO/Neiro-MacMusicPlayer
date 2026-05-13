@@ -100,8 +100,10 @@ struct HomeView: View {
                         .hoverLift()
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 8)
             }
+            .scrollClipDisabled()
         }
     }
 
@@ -209,7 +211,10 @@ private struct DailyPickCard: View {
     var body: some View {
         Button(action: onPlay) {
             VStack(alignment: .leading, spacing: 8) {
-                AlbumThumbnail(data: track.album?.artworkData, size: 140)
+                ZStack {
+                    DailyPickArtwork(data: track.album?.artworkData, size: 132)
+                }
+                .frame(width: 140, height: 140)
                 Text(track.title)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
@@ -222,6 +227,42 @@ private struct DailyPickCard: View {
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct DailyPickArtwork: View {
+    let data: Data?
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.black.opacity(0.20))
+
+            if let data, let img = NSImage(data: data) {
+                Image(nsImage: img)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [.accentColor.opacity(0.45), .accentColor.opacity(0.10)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                    Image(systemName: "music.note")
+                        .font(.system(size: size * 0.36, weight: .light))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+        )
     }
 }
 

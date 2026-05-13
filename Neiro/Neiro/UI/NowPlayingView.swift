@@ -71,19 +71,23 @@ struct NowPlayingView: View {
             let topPad = max(16, geo.safeAreaInsets.top + 6)
             let controlSize = min(max(side * 0.018, 20), 26)
 
-            VStack(spacing: max(12, side * 0.015)) {
+            ZStack(alignment: .topLeading) {
+                VStack(spacing: max(12, side * 0.015)) {
+                    Spacer(minLength: 0)
+                    artwork(size: artworkSize)
+                    titleBlock(titleSize: titleSize)
+                    progress(width: progressWidth)
+                    controls(controlSize: controlSize)
+                    Spacer(minLength: 0)
+                }
+                .frame(width: containerWidth)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, max(24, geo.size.width * 0.035))
+                .padding(.bottom, max(24, geo.safeAreaInsets.bottom + 8))
+
                 topBar(topPadding: topPad)
-                Spacer(minLength: 0)
-                artwork(size: artworkSize)
-                titleBlock(titleSize: titleSize)
-                progress(width: progressWidth)
-                controls(controlSize: controlSize)
-                Spacer(minLength: 0)
+                    .padding(.leading, 8)
             }
-            .frame(width: containerWidth)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, max(24, geo.size.width * 0.035))
-            .padding(.bottom, max(24, geo.safeAreaInsets.bottom + 8))
         }
     }
 

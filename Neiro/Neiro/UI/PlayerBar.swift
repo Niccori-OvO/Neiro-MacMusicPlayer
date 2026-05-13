@@ -56,11 +56,16 @@ struct InlinePlayerBar: View {
 
     private var transportCluster: some View {
         HStack(spacing: 10) {
-            transportButton("shuffle", size: 13) {
-                // Phase 2 后期：随机播放
+            Button {
+                engine.toggleShuffle()
+            } label: {
+                Image(systemName: "shuffle")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(engine.isShuffleEnabled ? Color.accentColor : .secondary)
+                    .frame(width: 26, height: 26)
             }
-            .opacity(0.5)
-            .help(NeiroText.tr("随机播放（即将上线）", "Shuffle (coming soon)"))
+            .buttonStyle(.plain)
+            .help(NeiroText.tr("随机播放", "Shuffle"))
 
             transportButton("backward.fill", size: 13) { previousOrRestartTrack() }
             .onLongPressGesture(minimumDuration: 0.22, pressing: { pressing in
@@ -87,11 +92,16 @@ struct InlinePlayerBar: View {
             }, perform: {})
             .disabled(engine.currentURL == nil)
 
-            transportButton("repeat", size: 13) {
-                // Phase 2 后期：循环
+            Button {
+                engine.cycleRepeatMode()
+            } label: {
+                Image(systemName: engine.repeatMode == .one ? "repeat.1" : "repeat")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(engine.repeatMode == .off ? .secondary : Color.accentColor)
+                    .frame(width: 26, height: 26)
             }
-            .opacity(0.5)
-            .help(NeiroText.tr("循环（即将上线）", "Repeat (coming soon)"))
+            .buttonStyle(.plain)
+            .help(NeiroText.tr("循环模式", "Repeat mode"))
         }
     }
 
@@ -277,6 +287,12 @@ struct InlinePlayerBar: View {
     }
 
     private func previousOrRestartTrack() {
+        // 优先用 engine 内部队列
+        if !engine.queue.isEmpty, engine.currentIndex != nil {
+            engine.previousTrack()
+            return
+        }
+        // 全库 fallback
         guard let currentURL = engine.currentURL else { return }
         if engine.currentTime > 3 {
             engine.seek(toSeconds: 0)
@@ -292,6 +308,12 @@ struct InlinePlayerBar: View {
     }
 
     private func nextTrack() {
+        // 优先用 engine 内部队列
+        if !engine.queue.isEmpty, engine.currentIndex != nil {
+            engine.nextTrack()
+            return
+        }
+        // 全库 fallback
         guard let currentURL = engine.currentURL else { return }
         guard let idx = sortedTracks.firstIndex(where: { $0.filePath == currentURL.path }) else { return }
         let nextIndex = min(sortedTracks.count - 1, idx + 1)
@@ -360,6 +382,12 @@ private struct QueuePopover: View {
         return allTracks.first(where: { $0.filePath == path })
     }
 
+    /// 当前曲之后的 URL 列表
+    private func upcomingTracks() -> [URL] {
+        guard let cur = engine.currentIndex, cur < engine.queue.count - 1 else { return [] }
+        return Array(engine.queue[(cur + 1)...])
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -387,14 +415,71 @@ private struct QueuePopover: View {
 
             Divider().opacity(0.5)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(NeiroText.tr("接下来", "Up Next")).font(.caption.bold()).foregroundStyle(.secondary)
-                Text(NeiroText.tr("播放队列将在 Phase 2 后期上线（自动排队、上一首/下一首、随机/循环）", "Queue system will arrive in late Phase 2 (auto queue, prev/next, shuffle/repeat)."))
-                    .font(.caption).foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(NeiroText.tr("接下来", "Up Next")).font(.caption.bold()).foregroundStyle(.secondary)
+                    Spacer()
+                    if engine.queue.count > 1 {
+                        Text("\(engine.queue.count) " + NeiroText.tr("首", "tracks"))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                if engine.queue.isEmpty {
+                    Text(NeiroText.tr("队列为空", "Queue is empty"))
+                        .font(.caption).foregroundStyle(.tertiary)
+                } else {
+                    let upcoming = upcomingTracks()
+                    if upcoming.isEmpty {
+                        Text(NeiroText.tr("已经是最后一首", "End of queue"))
+                            .font(.caption).foregroundStyle(.tertiary)
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 4) {
+                                ForEach(upcoming.prefix(10), id: \.absoluteString) { url in
+                                    QueueRow(url: url)
+                                }
+                                if upcoming.count > 10 {
+                                    Text("… +\(upcoming.count - 10)")
+                                        .font(.caption2).foregroundStyle(.tertiary)
+                                        .padding(.top, 4)
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 220)
+                        .scrollContentBackground(.hidden)
+                    }
+                }
             }
         }
         .padding(16)
-        .frame(width: 320)
+        .frame(width: 340)
+    }
+}
+
+private struct QueueRow: View {
+    let url: URL
+    @Query private var allTracks: [Track]
+
+    private var track: Track? {
+        allTracks.first(where: { $0.filePath == url.path })
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            AlbumThumbnail(data: track?.album?.artworkData, size: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(track?.title ?? url.deletingPathExtension().lastPathComponent)
+                    .font(.caption)
+                    .lineLimit(1)
+                if let artist = track?.artist?.name {
+                    Text(artist).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
     }
 }

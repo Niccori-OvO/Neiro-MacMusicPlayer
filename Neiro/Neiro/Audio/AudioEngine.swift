@@ -45,6 +45,31 @@ public final class AudioEngine {
         didSet { engine.mainMixerNode.outputVolume = max(0, min(1, volume)) }
     }
 
+    // MARK: - 播放队列
+
+    /// 当前队列（URL 列表）。
+    public private(set) var queue: [URL] = []
+    /// 队列里当前正在播放的 index，没有就是 nil。
+    public private(set) var currentIndex: Int? = nil
+
+    public enum RepeatMode: String, CaseIterable { case off, one, all }
+    public var repeatMode: RepeatMode = .off
+    public var isShuffleEnabled: Bool = false {
+        didSet {
+            // 开启 shuffle 时从当前曲目重建顺序；关闭时清空（next 走顺序逻辑）
+            if isShuffleEnabled {
+                rebuildShuffleOrder(startingAt: currentIndex)
+            } else {
+                shuffledIndices = []
+                shuffleCursor = 0
+            }
+        }
+    }
+
+    /// 当 shuffle 打开时记录的随机播放顺序，是 queue 的 index 顺序
+    private var shuffledIndices: [Int] = []
+    private var shuffleCursor: Int = 0
+
     // MARK: - Private
 
     private let engine = AVAudioEngine()
@@ -171,6 +196,105 @@ public final class AudioEngine {
         isFinishing = false
     }
 
+    // MARK: - 队列控制
+
+    /// 用 URL 列表替换当前队列并从指定 index 开始播放。
+    public func playQueue(_ urls: [URL], startAt index: Int = 0, shuffle: Bool = false) {
+        guard !urls.isEmpty else { stop(); return }
+        queue = urls
+        let safeIndex = max(0, min(index, urls.count - 1))
+        currentIndex = safeIndex
+
+        if shuffle {
+            isShuffleEnabled = true
+            rebuildShuffleOrder(startingAt: safeIndex)
+        }
+        load(url: urls[safeIndex])
+    }
+
+    /// 在队列中下一首
+    public func nextTrack() {
+        guard !queue.isEmpty, let cur = currentIndex else { return }
+        let nextIdx = computeNextIndex(from: cur)
+        guard let n = nextIdx else {
+            // 到队尾：repeat off 就停止
+            stop()
+            return
+        }
+        currentIndex = n
+        load(url: queue[n])
+    }
+
+    /// 在队列中上一首；当播放进度 > 3s 时改为从头开始
+    public func previousTrack() {
+        guard !queue.isEmpty, let cur = currentIndex else { return }
+        if currentTime > 3 {
+            seek(toSeconds: 0)
+            return
+        }
+        let prevIdx = computePrevIndex(from: cur)
+        guard let p = prevIdx else { return }
+        currentIndex = p
+        load(url: queue[p])
+    }
+
+    public func toggleShuffle() { isShuffleEnabled.toggle() }
+
+    public func cycleRepeatMode() {
+        switch repeatMode {
+        case .off: repeatMode = .all
+        case .all: repeatMode = .one
+        case .one: repeatMode = .off
+        }
+    }
+
+    /// 内部：计算下一首 index
+    private func computeNextIndex(from current: Int) -> Int? {
+        if repeatMode == .one { return current }
+        if isShuffleEnabled {
+            shuffleCursor += 1
+            if shuffleCursor >= shuffledIndices.count {
+                if repeatMode == .all {
+                    rebuildShuffleOrder()
+                    shuffleCursor = 0
+                } else {
+                    return nil
+                }
+            }
+            return shuffledIndices[shuffleCursor]
+        } else {
+            let nxt = current + 1
+            if nxt >= queue.count {
+                return repeatMode == .all ? 0 : nil
+            }
+            return nxt
+        }
+    }
+
+    private func computePrevIndex(from current: Int) -> Int? {
+        if repeatMode == .one { return current }
+        if isShuffleEnabled {
+            shuffleCursor = max(0, shuffleCursor - 1)
+            guard shuffledIndices.indices.contains(shuffleCursor) else { return nil }
+            return shuffledIndices[shuffleCursor]
+        } else {
+            let prev = current - 1
+            if prev < 0 { return repeatMode == .all ? queue.count - 1 : nil }
+            return prev
+        }
+    }
+
+    private func rebuildShuffleOrder(startingAt: Int? = nil) {
+        var all = Array(queue.indices)
+        all.shuffle()
+        // 把 startingAt 放在第一位
+        if let s = startingAt, let pos = all.firstIndex(of: s) {
+            all.swapAt(0, pos)
+        }
+        shuffledIndices = all
+        shuffleCursor = 0
+    }
+
     /// 跳到指定秒。
     public func seek(toSeconds seconds: TimeInterval) {
         guard let f = file else { return }
@@ -228,11 +352,17 @@ public final class AudioEngine {
     }
 
     private func handlePlaybackFinished() {
-        // 文件已播放到末尾
+        // 文件已播放到末尾。若队列还有曲目，自动播放下一首。
         player.stop()
         stopPositionTimer()
         currentTime = duration
-        state = .idle
+
+        if !queue.isEmpty, let cur = currentIndex, let next = computeNextIndex(from: cur) {
+            currentIndex = next
+            load(url: queue[next])
+        } else {
+            state = .idle
+        }
     }
 
     private func cleanup() {
@@ -252,7 +382,9 @@ public final class AudioEngine {
     private func startPositionTimer() {
         stopPositionTimer()
         let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateCurrentTime() }
+            DispatchQueue.main.async { [weak self] in
+                self?.updateCurrentTime()
+            }
         }
         RunLoop.main.add(t, forMode: .common)
         positionTimer = t

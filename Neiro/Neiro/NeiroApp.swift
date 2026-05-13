@@ -19,6 +19,7 @@ struct NeiroApp: App {
     @State private var router = AppRouter()
     @AppStorage(NeiroTheme.accentKey) private var accentHex: String = ""
     @AppStorage(NeiroTheme.appearanceKey) private var appearanceRaw: String = NeiroAppearance.system.rawValue
+    @AppStorage(NeiroTheme.languageKey) private var languageRaw: String = NeiroLanguage.chinese.rawValue
 
     let modelContainer: ModelContainer
 
@@ -50,6 +51,7 @@ struct NeiroApp: App {
                 .tint(accentColor)
                 .preferredColorScheme(NeiroAppearance(rawValue: appearanceRaw)?.colorScheme)
                 .frame(minWidth: 1245, minHeight: 600)
+                .id(languageRaw) // 切换语言时强制 view 树重建以应用 NeiroText 翻译
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
@@ -76,6 +78,7 @@ struct NeiroApp: App {
                 .modelContainer(modelContainer)
                 .tint(accentColor)
                 .preferredColorScheme(NeiroAppearance(rawValue: appearanceRaw)?.colorScheme)
+                .id(languageRaw)
         }
         .windowResizability(.contentSize)
         .defaultPosition(.center)
@@ -88,6 +91,7 @@ struct NeiroApp: App {
                 .modelContainer(modelContainer)
                 .tint(accentColor)
                 .preferredColorScheme(NeiroAppearance(rawValue: appearanceRaw)?.colorScheme)
+                .id(languageRaw)
         }
     }
 
