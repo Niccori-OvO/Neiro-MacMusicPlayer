@@ -1,9 +1,3 @@
-//
-//  PlaylistsView.swift
-//  Neiro
-//
-//  Phase 1：列出默认 playlist。立绘背景由共享 modifier 提供。
-//
 
 import SwiftUI
 import SwiftData
@@ -72,7 +66,6 @@ struct PlaylistsView: View {
     }
 }
 
-// MARK: - 卡片
 
 private struct PlaylistCard: View {
     let playlist: Playlist

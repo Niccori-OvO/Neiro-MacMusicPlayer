@@ -1,21 +1,12 @@
-//
-//  Animations.swift
-//  Neiro
-//
-//  通用动画 helper：hover 抬升、按钮按压反馈、页面切换 transition。
-//
 
 import SwiftUI
 
-// MARK: - Hover lift
 
 public extension View {
-    /// hover 时轻微抬升 + 阴影加深，适合卡片。
     func hoverLift(scale: CGFloat = 1.025, lift: CGFloat = 2) -> some View {
         modifier(HoverLift(scale: scale, lift: lift))
     }
 
-    /// 按下时缩小一点点，更有按钮感。
     func pressDown(scale: CGFloat = 0.96) -> some View {
         modifier(PressDown(scale: scale))
     }
@@ -54,10 +45,8 @@ private struct PressDown: ViewModifier {
     }
 }
 
-// MARK: - Page transition
 
 public extension AnyTransition {
-    /// 主内容区切换页面用的过渡：稍偏右 + 渐隐
     static var neiroPage: AnyTransition {
         .asymmetric(
             insertion: .opacity.combined(with: .offset(x: 8, y: 0)),
@@ -66,7 +55,6 @@ public extension AnyTransition {
     }
 }
 
-// MARK: - SidebarRow hover
 
 struct HoverableRow<Content: View>: View {
     @ViewBuilder var content: () -> Content

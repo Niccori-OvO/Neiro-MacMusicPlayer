@@ -1,7 +1,3 @@
-//
-//  SongsView.swift
-//  Neiro
-//
 
 import SwiftUI
 import SwiftData
@@ -16,10 +12,27 @@ struct SongsView: View {
     @Query(sort: [SortDescriptor(\Track.title)]) private var tracks: [Track]
     @Query(sort: \Playlist.sortOrder) private var playlists: [Playlist]
     @State private var selectedIDs: Set<PersistentIdentifier> = []
+    @State private var trackToDelete: Track? = nil
+    @State private var showDeleteFileConfirm = false
 
     var body: some View {
         content
             .neiroPageBackground()
+            .confirmationDialog(
+                NeiroText.tr("确定要删除源文件吗？", "Delete source file?"),
+                isPresented: $showDeleteFileConfirm,
+                presenting: trackToDelete
+            ) { track in
+                Button(NeiroText.tr("删除", "Delete"), role: .destructive) {
+                    LibraryActions.remove(track, deleteSourceFile: true, in: context)
+                }
+                Button(NeiroText.tr("取消", "Cancel"), role: .cancel) { }
+            } message: { track in
+                Text(NeiroText.tr(
+                    "「\(track.title)」会从媒体库移除，磁盘上的源文件也将被删除。此操作不可撤销。",
+                    "“\(track.title)” will be removed from the library, and the source file will be deleted permanently."
+                ))
+            }
     }
 
     private var content: some View {
@@ -83,7 +96,6 @@ struct SongsView: View {
                     }
                     .width(40)
 
-                    // 右侧 spacer column 吃掉剩余宽度，让前面的 columns 自然靠左
                     TableColumn("") { _ in Color.clear }
                         .width(min: 0, ideal: 200, max: 999)
                 }
@@ -101,7 +113,6 @@ struct SongsView: View {
         .neiroArtworkMenu()
     }
 
-    // MARK: - Row context menu
 
     @ViewBuilder
     private func trackContextMenu(ids: Set<PersistentIdentifier>) -> some View {
@@ -194,10 +205,17 @@ struct SongsView: View {
             Divider()
 
             Button(role: .destructive) {
-                removeFromLibrary(track)
+                LibraryActions.remove(track, deleteSourceFile: false, in: context)
             } label: {
-                Label(NeiroText.tr("从媒体库移除（不删源文件）", "Remove from Library (keep file)"),
+                Label(NeiroText.tr("从媒体库移除（保留源文件）", "Remove from Library (keep file)"),
                       systemImage: "minus.circle")
+            }
+            Button(role: .destructive) {
+                trackToDelete = track
+                showDeleteFileConfirm = true
+            } label: {
+                Label(NeiroText.tr("从媒体库移除并删除源文件…", "Remove and Delete File…"),
+                      systemImage: "trash")
             }
         } else if ids.count > 1 {
             Text(NeiroText.tr("已选 \(ids.count) 首", "\(ids.count) selected"))
@@ -242,9 +260,7 @@ struct SongsView: View {
     }
 
     private func removeFromLibrary(_ track: Track) {
-        // 仅删 SwiftData 索引，源文件不动
-        context.delete(track)
-        try? context.save()
+        LibraryActions.remove(track, deleteSourceFile: false, in: context)
     }
 
     private func play(_ track: Track) {

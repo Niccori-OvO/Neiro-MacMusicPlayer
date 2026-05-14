@@ -1,23 +1,10 @@
-//
-//  Models.swift
-//  Neiro
-//
-//  SwiftData 模型：Track / Album / Artist / Playlist
-//  设计决策：
-//    - 用文件 URL 的 `path` 作为 Track 的稳定唯一键（不存 Data bookmark 是因为
-//      Phase 1 假设音乐都在 ~/Music/Neiro/ 里；Phase 2 处理可拖拽导入时再补 bookmark）
-//    - 封面图存到 SwiftData 里的 Data（小图压缩到 256x256 JPEG，避免 DB 暴涨）
-//    - 关系用 inverse 双向，让删除时级联干净
-//
 
 import Foundation
 import SwiftData
 
-// MARK: - Track
 
 @Model
 public final class Track {
-    /// 文件路径（去掉 ~ 展开后）。作为查重和重新扫描的主键。
     @Attribute(.unique) public var filePath: String
 
     public var title: String
@@ -26,30 +13,22 @@ public final class Track {
     public var durationSeconds: Double
     public var year: Int?
     public var genre: String?
-    /// 文件大小（字节）
     public var fileSize: Int64
-    /// 源采样率，Hz
     public var sampleRate: Double
-    /// 源位深
     public var bitDepth: Int
-    /// 声道数
     public var channels: Int
 
-    /// Phase 2 才会启用，预留
     public var isFavorite: Bool = false
-    /// 添加进库时间
     public var addedAt: Date
 
-    /// 沙箱下持久化访问权限用的 security-scoped bookmark。
-    /// 重启 App 后用它解析回带 scope 的 URL，再 startAccessing 才能读。
+    public var playCount: Int = 0
+    public var lastPlayedAt: Date?
+
     @Attribute(.externalStorage) public var bookmarkData: Data?
 
-    /// 关联 .lrc 歌词文件路径（可选）
     public var lyricFilePath: String?
-    /// 歌词文件的 security-scoped bookmark
     @Attribute(.externalStorage) public var lyricBookmarkData: Data?
 
-    /// inverse 写在 Album/Artist/Playlist 的 to-many 侧
     public var album: Album?
     public var artist: Artist?
     public var playlists: [Playlist] = []
@@ -71,9 +50,6 @@ public final class Track {
         self.addedAt = Date()
     }
 
-    /// 拿到可读的文件 URL。
-    /// 沙箱开启时，重启 App 后 fileImporter 给的 URL 失效，必须用 bookmark resolve。
-    /// resolve 后返回的 URL 是 security-scoped，调用方 startAccessingSecurityScopedResource() 后才能读。
     public var fileURL: URL {
         if let bookmark = bookmarkData {
             var isStale = false
@@ -89,7 +65,18 @@ public final class Track {
         return URL(fileURLWithPath: filePath)
     }
 
-    /// 关联歌词的 URL，bookmark 优先。
+    public func matches(url: URL) -> Bool {
+        let urlPath = url.standardizedFileURL.resolvingSymlinksInPath().path
+        let storedPath = URL(fileURLWithPath: filePath)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
+        if urlPath == storedPath { return true }
+        if filePath == url.path { return true }
+        if filePath.hasSuffix(url.lastPathComponent) { return true }
+        return false
+    }
+
     public var lyricURL: URL? {
         if let bookmark = lyricBookmarkData {
             var isStale = false
@@ -109,7 +96,6 @@ public final class Track {
     }
 }
 
-// MARK: - Album
 
 @Model
 public final class Album {
@@ -117,7 +103,6 @@ public final class Album {
     public var name: String
     public var artistName: String
     public var year: Int?
-    /// 256x256 JPEG 缩略图
     @Attribute(.externalStorage) public var artworkData: Data?
     public var isFavorite: Bool = false
 
@@ -136,7 +121,6 @@ public final class Album {
     }
 }
 
-// MARK: - Artist（在 UI 里显示为"作曲家"）
 
 @Model
 public final class Artist {
@@ -151,7 +135,6 @@ public final class Artist {
     }
 }
 
-// MARK: - Playlist
 
 @Model
 public final class Playlist {
@@ -168,8 +151,8 @@ public final class Playlist {
     public var kindRaw: String
     public var createdAt: Date
     public var sortOrder: Int
-    /// 角色立绘 PNG，Phase 2 启用
     @Attribute(.externalStorage) public var backgroundImage: Data?
+    public var animeProjectID: String?
 
     @Relationship(inverse: \Track.playlists)
     public var tracks: [Track] = []
@@ -187,19 +170,27 @@ public final class Playlist {
         self.sortOrder = sortOrder
     }
 
-    /// 显示名：默认 playlist 跟随 NeiroLanguage 翻译，自建 playlist 直接用 name。
     public var displayName: String {
         switch kind {
         case .favoriteTracks:  return NeiroText.tr("喜爱歌曲", "Favorite Songs")
         case .favoriteAlbums:  return NeiroText.tr("喜爱专辑", "Favorite Albums")
         case .favoriteArtists: return NeiroText.tr("喜爱作曲家", "Favorite Artists")
-        case .anime:           return NeiroText.tr("二次元企划", "Anime")
+        case .anime:
+            if let pid = animeProjectID,
+               let project = AnimeProjects.byID(pid) {
+                return project.localizedName
+            }
+            return name
         case .userCreated:     return name
         }
     }
+
+    public var animeCategory: AnimeCategory? {
+        guard kind == .anime, let pid = animeProjectID else { return nil }
+        return AnimeProjects.byID(pid)?.category
+    }
 }
 
-// MARK: - 默认 playlist 引导
 
 public enum DefaultPlaylists {
     public static func ensureExist(in context: ModelContext) {

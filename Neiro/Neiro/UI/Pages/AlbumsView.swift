@@ -1,16 +1,14 @@
-//
-//  AlbumsView.swift
-//  Neiro
-//
 
 import SwiftUI
 import SwiftData
 
 struct AlbumsView: View {
     @Environment(AudioEngine.self) private var engine
+    @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\Album.name)]) private var albums: [Album]
     @State private var selectedAlbum: Album?
-
+    @State private var albumToDelete: Album? = nil
+    @State private var showDeleteFileConfirm = false
     private let columns = [GridItem(.adaptive(minimum: 160), spacing: 16)]
 
     var body: some View {
@@ -18,11 +16,75 @@ struct AlbumsView: View {
             .sheet(item: $selectedAlbum) { album in
                 AlbumDetailSheet(album: album)
             }
+            .confirmationDialog(
+                NeiroText.tr("确定要删除整张专辑的源文件吗？", "Delete all source files in this album?"),
+                isPresented: $showDeleteFileConfirm,
+                presenting: albumToDelete
+            ) { album in
+                Button(NeiroText.tr("全部删除", "Delete All"), role: .destructive) {
+                    LibraryActions.remove(album, deleteSourceFiles: true, in: context)
+                }
+                Button(NeiroText.tr("取消", "Cancel"), role: .cancel) { }
+            } message: { album in
+                Text(NeiroText.tr(
+                    "「\(album.name)」共 \(album.tracks.count) 首会一起被删除（包括磁盘文件）。此操作不可撤销。",
+                    "“\(album.name)” (\(album.tracks.count) tracks) will be deleted from library AND disk. This cannot be undone."
+                ))
+            }
+    }
+
+    @ViewBuilder
+    private func albumContextMenu(for album: Album) -> some View {
+        Button {
+            playAlbum(album, shuffle: false)
+        } label: {
+            Label(NeiroText.tr("播放", "Play"), systemImage: "play.fill")
+        }
+        Button {
+            playAlbum(album, shuffle: true)
+        } label: {
+            Label(NeiroText.tr("随机播放", "Shuffle"), systemImage: "shuffle")
+        }
+
+        Divider()
+
+        Button {
+            LibraryActions.toggleFavorite(album, in: context)
+        } label: {
+            Label(album.isFavorite
+                  ? NeiroText.tr("取消喜爱", "Unfavorite")
+                  : NeiroText.tr("喜爱专辑", "Favorite Album"),
+                  systemImage: album.isFavorite ? "heart.slash" : "heart")
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            LibraryActions.remove(album, deleteSourceFiles: false, in: context)
+        } label: {
+            Label(NeiroText.tr("从媒体库移除（保留源文件）", "Remove from Library (keep files)"),
+                  systemImage: "minus.circle")
+        }
+        Button(role: .destructive) {
+            albumToDelete = album
+            showDeleteFileConfirm = true
+        } label: {
+            Label(NeiroText.tr("从媒体库移除并删除源文件…", "Remove and Delete Files…"),
+                  systemImage: "trash")
+        }
+    }
+
+    private func playAlbum(_ album: Album, shuffle: Bool) {
+        let sorted = album.tracks.sorted { ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
+        let urls = sorted.map { $0.fileURL }
+        guard !urls.isEmpty else { return }
+        engine.playQueue(urls, startAt: 0, shuffle: shuffle)
     }
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             PageHeader(title: NeiroText.tr("专辑", "Albums"), count: albums.count)
+                .zIndex(1)
 
             if albums.isEmpty {
                 EmptyState(systemImage: "square.stack",
@@ -35,14 +97,16 @@ struct AlbumsView: View {
                             AlbumCard(album: album)
                                 .hoverLift()
                                 .onTapGesture { selectedAlbum = album }
+                                .contextMenu { albumContextMenu(for: album) }
                         }
                     }
                     .padding(.top, 8)
                     .padding(.horizontal, 6)
                     .padding(.bottom, 8)
                 }
-                .scrollClipDisabled()
+                .clipped()
                 .scrollContentBackground(.hidden)
+                .zIndex(0)
             }
         }
         .padding(20)
@@ -74,12 +138,17 @@ struct AlbumCard: View {
             }
             Text(album.name)
                 .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .frame(height: 40, alignment: .topLeading)
             Text(album.artistName)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(height: 16, alignment: .topLeading)
         }
+        .frame(width: 160, alignment: .leading)
         .contentShape(Rectangle())
     }
 }

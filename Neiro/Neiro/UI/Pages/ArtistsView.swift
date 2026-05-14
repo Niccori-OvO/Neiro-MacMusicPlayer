@@ -1,7 +1,3 @@
-//
-//  ArtistsView.swift
-//  Neiro
-//
 
 import SwiftUI
 import SwiftData
@@ -11,11 +7,28 @@ struct ArtistsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Artist.name) private var artists: [Artist]
     @State private var selected: Artist?
+    @State private var artistToDelete: Artist? = nil
+    @State private var showDeleteFileConfirm = false
 
     var body: some View {
         content
             .sheet(item: $selected) { artist in
                 ArtistDetailSheet(artist: artist)
+            }
+            .confirmationDialog(
+                NeiroText.tr("确定要删除这位作曲家名下所有源文件吗？", "Delete all source files by this artist?"),
+                isPresented: $showDeleteFileConfirm,
+                presenting: artistToDelete
+            ) { artist in
+                Button(NeiroText.tr("全部删除", "Delete All"), role: .destructive) {
+                    LibraryActions.remove(artist, deleteSourceFiles: true, in: context)
+                }
+                Button(NeiroText.tr("取消", "Cancel"), role: .cancel) { }
+            } message: { artist in
+                Text(NeiroText.tr(
+                    "「\(artist.name)」共 \(artist.tracks.count) 首会一起被删除（包括磁盘文件）。此操作不可撤销。",
+                    "“\(artist.name)” (\(artist.tracks.count) tracks) will be deleted from library AND disk. This cannot be undone."
+                ))
             }
     }
 
@@ -49,12 +62,58 @@ struct ArtistsView: View {
                         }
                         .padding(.vertical, 4)
                         .tag(artist)
+                        .contextMenu {
+                            Button {
+                                playArtist(artist, shuffle: false)
+                            } label: {
+                                Label(NeiroText.tr("播放", "Play"), systemImage: "play.fill")
+                            }
+                            Button {
+                                playArtist(artist, shuffle: true)
+                            } label: {
+                                Label(NeiroText.tr("随机播放", "Shuffle"), systemImage: "shuffle")
+                            }
+
+                            Divider()
+
+                            Button {
+                                LibraryActions.toggleFavorite(artist, in: context)
+                            } label: {
+                                Label(artist.isFavorite
+                                      ? NeiroText.tr("取消喜爱", "Unfavorite")
+                                      : NeiroText.tr("喜爱作曲家", "Favorite Artist"),
+                                      systemImage: artist.isFavorite ? "heart.slash" : "heart")
+                            }
+
+                            Divider()
+
+                            Button(role: .destructive) {
+                                LibraryActions.remove(artist, deleteSourceFiles: false, in: context)
+                            } label: {
+                                Label(NeiroText.tr("从媒体库移除（保留源文件）", "Remove from Library (keep files)"),
+                                      systemImage: "minus.circle")
+                            }
+                            Button(role: .destructive) {
+                                artistToDelete = artist
+                                showDeleteFileConfirm = true
+                            } label: {
+                                Label(NeiroText.tr("从媒体库移除并删除源文件…", "Remove and Delete Files…"),
+                                      systemImage: "trash")
+                            }
+                        }
                     }
                 }
                 .scrollContentBackground(.hidden)
             }
         }
         .padding(20)
+    }
+
+    private func playArtist(_ artist: Artist, shuffle: Bool) {
+        let sorted = artist.tracks.sorted { $0.title < $1.title }
+        let urls = sorted.map { $0.fileURL }
+        guard !urls.isEmpty else { return }
+        engine.playQueue(urls, startAt: 0, shuffle: shuffle)
     }
 }
 

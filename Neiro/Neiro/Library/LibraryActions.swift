@@ -1,9 +1,3 @@
-//
-//  LibraryActions.swift
-//  Neiro
-//
-//  对 SwiftData 模型的小操作集合，让 UI 不直接耦合数据细节。
-//
 
 import Foundation
 import SwiftData
@@ -11,14 +5,12 @@ import SwiftData
 @MainActor
 public enum LibraryActions {
 
-    /// 翻转 track 的喜爱状态，并自动同步「喜爱歌曲」播放列表。
     public static func toggleFavorite(_ track: Track, in context: ModelContext) {
         track.isFavorite.toggle()
         syncFavoriteTracksPlaylist(for: track, in: context)
         try? context.save()
     }
 
-    /// 直接把 track 设为指定的喜爱状态。
     public static func setFavorite(_ isFavorite: Bool, on track: Track, in context: ModelContext) {
         guard track.isFavorite != isFavorite else { return }
         track.isFavorite = isFavorite
@@ -26,23 +18,19 @@ public enum LibraryActions {
         try? context.save()
     }
 
-    // MARK: - Album / Artist 喜爱
 
-    /// 翻转 album 的喜爱状态，并把它名下所有 tracks 加入/移出「喜爱专辑」playlist。
     public static func toggleFavorite(_ album: Album, in context: ModelContext) {
         album.isFavorite.toggle()
         syncFavoriteAlbumsPlaylist(for: album, in: context)
         try? context.save()
     }
 
-    /// 翻转 artist 的喜爱状态，并把它名下所有 tracks 加入/移出「喜爱作曲家」playlist。
     public static func toggleFavorite(_ artist: Artist, in context: ModelContext) {
         artist.isFavorite.toggle()
         syncFavoriteArtistsPlaylist(for: artist, in: context)
         try? context.save()
     }
 
-    // MARK: - 默认 playlist 取值
 
     public static func favoriteTracksPlaylist(in context: ModelContext) -> Playlist? {
         defaultPlaylist(kind: .favoriteTracks, in: context)
@@ -62,7 +50,70 @@ public enum LibraryActions {
         return try? context.fetch(descriptor).first
     }
 
-    // MARK: - Internal
+
+
+    public static func recordPlay(_ track: Track, in context: ModelContext) {
+        track.playCount += 1
+        track.lastPlayedAt = Date()
+        try? context.save()
+    }
+
+
+    public static func remove(_ track: Track,
+                              deleteSourceFile: Bool,
+                              in context: ModelContext) {
+        if deleteSourceFile {
+            let url = track.fileURL
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            try? FileManager.default.removeItem(at: url)
+            if let lyric = track.lyricURL {
+                let s = lyric.startAccessingSecurityScopedResource()
+                defer { if s { lyric.stopAccessingSecurityScopedResource() } }
+                try? FileManager.default.removeItem(at: lyric)
+            }
+        }
+        context.delete(track)
+        try? context.save()
+    }
+
+    public static func remove(_ album: Album,
+                              deleteSourceFiles: Bool,
+                              in context: ModelContext) {
+        for track in album.tracks {
+            remove(track, deleteSourceFile: deleteSourceFiles, in: context)
+        }
+        context.delete(album)
+        try? context.save()
+    }
+
+    public static func remove(_ artist: Artist,
+                              deleteSourceFiles: Bool,
+                              in context: ModelContext) {
+        for track in artist.tracks {
+            remove(track, deleteSourceFile: deleteSourceFiles, in: context)
+        }
+        context.delete(artist)
+        try? context.save()
+    }
+
+    @discardableResult
+    public static func purgeOrphans(in context: ModelContext) -> Int {
+        let descriptor = FetchDescriptor<Track>()
+        let tracks = (try? context.fetch(descriptor)) ?? []
+        let fm = FileManager.default
+        var removed = 0
+        for t in tracks {
+            let path = t.filePath
+            if !fm.fileExists(atPath: path) {
+                context.delete(t)
+                removed += 1
+            }
+        }
+        try? context.save()
+        return removed
+    }
+
 
     private static func syncFavoriteTracksPlaylist(for track: Track, in context: ModelContext) {
         guard let pl = favoriteTracksPlaylist(in: context) else { return }

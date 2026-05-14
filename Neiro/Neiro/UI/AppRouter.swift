@@ -1,7 +1,3 @@
-//
-//  AppRouter.swift
-//  Neiro
-//
 
 import Foundation
 import SwiftUI
@@ -13,7 +9,6 @@ public final class AppRouter {
     public var isNowPlayingPresented: Bool = false
     public var isLyricsPresented: Bool = false
 
-    /// 全局搜索关键字
     public var searchQuery: String = ""
 
     public init() {}

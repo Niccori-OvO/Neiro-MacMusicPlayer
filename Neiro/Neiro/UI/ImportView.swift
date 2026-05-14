@@ -1,10 +1,3 @@
-//
-//  ImportView.swift
-//  Neiro
-//
-//  导入音乐的独立窗口：大拖拽区 + 访达选取双轨。
-//  从 File 菜单 ⌘O 或主壳的"导入"按钮打开。
-//
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -28,7 +21,6 @@ struct ImportView: View {
         .padding(28)
         .frame(width: 560, height: 460)
         .background {
-            // 微妙的渐变玻璃感
             LinearGradient(
                 colors: [.accentColor.opacity(0.12), .clear],
                 startPoint: .top, endPoint: .bottom
@@ -37,7 +29,6 @@ struct ImportView: View {
         }
     }
 
-    // MARK: - sections
 
     private var header: some View {
         HStack {
@@ -144,7 +135,6 @@ struct ImportView: View {
         }
     }
 
-    // MARK: - actions
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
         guard !providers.isEmpty else { return false }
@@ -184,10 +174,6 @@ struct ImportView: View {
     private func importURLs(_ urls: [URL]) async {
         guard !urls.isEmpty else { return }
         resultMessage = nil
-        // 只导入用户实际拖进来 / 选中的内容：
-        //   - 文件：导入这个文件
-        //   - 目录：递归这个目录
-        // 不会扫描传入路径之外的任何东西。
         await library.importItems(urls)
     }
 

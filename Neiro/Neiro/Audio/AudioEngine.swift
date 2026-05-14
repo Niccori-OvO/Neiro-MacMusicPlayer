@@ -1,17 +1,3 @@
-//
-//  AudioEngine.swift
-//  Neiro
-//
-//  基于 AVAudioEngine 的播放引擎。
-//
-//  设计原则（v0.2 重写）：
-//    - 简单：用 Apple 自家 AVAudioEngine 而非手撸 CoreAudio IOProc，
-//      自动处理设备变化、蓝牙/AirPlay/USB DAC/HDMI/内置喇叭。
-//    - 兼容：AVAudioFile 原生支持 FLAC / ALAC / WAV / AIFF / M4A / MP3。
-//    - 高质量：AVAudioEngine 末端走 vDSP 加速的高质量重采样，
-//      送给设备的永远是设备原生支持的格式，不会因为采样率不匹配卡死。
-//    - 高性能：Apple 内核优化的 buffer 调度，蓝牙耳机也能稳。
-//
 
 import Foundation
 import AVFoundation
@@ -29,11 +15,9 @@ public final class AudioEngine {
         case error(String)
     }
 
-    // MARK: - Observed
 
     public private(set) var state: PlaybackState = .idle
     public private(set) var currentURL: URL?
-    /// 源文件原生格式（仅展示用）。
     public private(set) var sourceSampleRate: Double = 0
     public private(set) var sourceBitDepth: Int = 0
     public private(set) var sourceChannels: Int = 0
@@ -45,18 +29,14 @@ public final class AudioEngine {
         didSet { engine.mainMixerNode.outputVolume = max(0, min(1, volume)) }
     }
 
-    // MARK: - 播放队列
 
-    /// 当前队列（URL 列表）。
     public private(set) var queue: [URL] = []
-    /// 队列里当前正在播放的 index，没有就是 nil。
     public private(set) var currentIndex: Int? = nil
 
     public enum RepeatMode: String, CaseIterable { case off, one, all }
     public var repeatMode: RepeatMode = .off
     public var isShuffleEnabled: Bool = false {
         didSet {
-            // 开启 shuffle 时从当前曲目重建顺序；关闭时清空（next 走顺序逻辑）
             if isShuffleEnabled {
                 rebuildShuffleOrder(startingAt: currentIndex)
             } else {
@@ -66,23 +46,17 @@ public final class AudioEngine {
         }
     }
 
-    /// 当 shuffle 打开时记录的随机播放顺序，是 queue 的 index 顺序
     private var shuffledIndices: [Int] = []
     private var shuffleCursor: Int = 0
 
-    // MARK: - Private
 
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
 
     private var file: AVAudioFile?
-    /// 当前文件的总帧数。
     private var totalFrames: AVAudioFramePosition = 0
-    /// 当 player 被 stop 时，记下相对文件起点的偏移帧（用于 seek 后正确显示时间）。
     private var seekOffsetFrames: AVAudioFramePosition = 0
-    /// 当前播放是否处于"调度结束"的清理过程，避免完成回调和用户操作打架。
     private var isFinishing = false
-    /// 每次重新 schedule 都递增，避免旧的 completion 回调影响新播放状态。
     private var scheduleGeneration: UInt64 = 0
 
     private var securityScopedURL: URL?
@@ -90,14 +64,12 @@ public final class AudioEngine {
 
     private static let log = Logger(subsystem: "app.neiro", category: "Engine")
 
-    // MARK: - Init
 
     public init() {
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: nil)
         engine.mainMixerNode.outputVolume = volume
 
-        // 设备变化（拔耳机、切 AirPlay）后自动重连
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleConfigurationChange),
@@ -108,17 +80,13 @@ public final class AudioEngine {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-        // 注意：security-scoped 句柄由 stop() 释放；这里 deinit 是 nonisolated，
-        // 不再触碰 main-actor 隔离的属性。
     }
 
-    // MARK: - Transport
 
-    /// 打开并立即开始播放。
     public func load(url: URL) {
         stop()
 
-        // Sandbox / .fileImporter 给的 URL 需要拿 security-scoped 访问
+        // Keep security scope alive during playback for sandboxed files.
         if url.startAccessingSecurityScopedResource() {
             securityScopedURL = url
         }
@@ -152,15 +120,11 @@ public final class AudioEngine {
         guard let f = file, state == .paused else { return }
         do {
             try startEngineIfNeeded()
-            // 续播：若 player 内部还有未播完的 buffer 直接 play() 续播。
-            // 若 buffer 已经被消费完（罕见，但 dataConsumed 模式会发生），
-            // 按当前 currentTime 重新 schedule 后再 play。
             if !player.isPlaying {
                 if player.engine != nil {
                     player.play()
                 }
                 if !player.isPlaying {
-                    // 兜底：用当前时间重新 schedule
                     let sr = f.processingFormat.sampleRate
                     let frame = AVAudioFramePosition(currentTime * sr)
                     scheduleAndPlay(from: frame, autoPlay: true)
@@ -184,7 +148,10 @@ public final class AudioEngine {
 
     public func stop() {
         isFinishing = true
-        player.stop()
+        if player.isPlaying {
+            player.pause()
+        }
+        player.reset()
         engine.stop()
         stopPositionTimer()
         if let scoped = securityScopedURL {
@@ -196,9 +163,7 @@ public final class AudioEngine {
         isFinishing = false
     }
 
-    // MARK: - 队列控制
 
-    /// 用 URL 列表替换当前队列并从指定 index 开始播放。
     public func playQueue(_ urls: [URL], startAt index: Int = 0, shuffle: Bool = false) {
         guard !urls.isEmpty else { stop(); return }
         queue = urls
@@ -212,12 +177,10 @@ public final class AudioEngine {
         load(url: urls[safeIndex])
     }
 
-    /// 在队列中下一首
     public func nextTrack() {
         guard !queue.isEmpty, let cur = currentIndex else { return }
         let nextIdx = computeNextIndex(from: cur)
         guard let n = nextIdx else {
-            // 到队尾：repeat off 就停止
             stop()
             return
         }
@@ -225,7 +188,6 @@ public final class AudioEngine {
         load(url: queue[n])
     }
 
-    /// 在队列中上一首；当播放进度 > 3s 时改为从头开始
     public func previousTrack() {
         guard !queue.isEmpty, let cur = currentIndex else { return }
         if currentTime > 3 {
@@ -248,7 +210,6 @@ public final class AudioEngine {
         }
     }
 
-    /// 内部：计算下一首 index
     private func computeNextIndex(from current: Int) -> Int? {
         if repeatMode == .one { return current }
         if isShuffleEnabled {
@@ -287,7 +248,6 @@ public final class AudioEngine {
     private func rebuildShuffleOrder(startingAt: Int? = nil) {
         var all = Array(queue.indices)
         all.shuffle()
-        // 把 startingAt 放在第一位
         if let s = startingAt, let pos = all.firstIndex(of: s) {
             all.swapAt(0, pos)
         }
@@ -295,7 +255,6 @@ public final class AudioEngine {
         shuffleCursor = 0
     }
 
-    /// 跳到指定秒。
     public func seek(toSeconds seconds: TimeInterval) {
         guard let f = file else { return }
         let wasPlaying = (state == .playing)
@@ -314,7 +273,6 @@ public final class AudioEngine {
         }
     }
 
-    // MARK: - Internals
 
     private func startEngineIfNeeded() throws {
         guard !engine.isRunning else { return }
@@ -331,11 +289,10 @@ public final class AudioEngine {
             return
         }
         seekOffsetFrames = startFrame
+        // Ignore stale completion callbacks from previous schedules.
         scheduleGeneration &+= 1
         let generation = scheduleGeneration
 
-        // 关键：dataPlayedBack 表示样本真正被设备播完才触发回调，
-        // pause() 不会因为预读 buffer 消费而误触发把状态切回 idle。
         player.scheduleSegment(f,
                                startingFrame: startFrame,
                                frameCount: remaining,
@@ -352,7 +309,6 @@ public final class AudioEngine {
     }
 
     private func handlePlaybackFinished() {
-        // 文件已播放到末尾。若队列还有曲目，自动播放下一首。
         player.stop()
         stopPositionTimer()
         currentTime = duration
@@ -377,7 +333,6 @@ public final class AudioEngine {
         sourceChannels = 0
     }
 
-    // MARK: - Position
 
     private func startPositionTimer() {
         stopPositionTimer()
@@ -406,10 +361,8 @@ public final class AudioEngine {
         currentTime = max(0, min(elapsed, duration))
     }
 
-    // MARK: - Device change
 
     @objc private func handleConfigurationChange(_ note: Notification) {
-        // 设备热切换：AVAudioEngine 会自动 stop。我们尝试重新 start 并继续播放。
         let wasPlaying = (state == .playing)
         let snapshotFrame = AVAudioFramePosition(currentTime * (file?.processingFormat.sampleRate ?? 44100))
         do {
@@ -422,11 +375,8 @@ public final class AudioEngine {
         }
     }
 
-    // MARK: - Helpers
 
     private func bitDepth(from format: AVAudioFormat) -> Int {
-        // AVAudioFile.processingFormat 永远是 Float32；
-        // 用 fileFormat / streamDescription 拿源比特深度更准确。
         guard let asbd = file?.fileFormat.streamDescription.pointee else { return 0 }
         if (asbd.mFormatFlags & kAudioFormatFlagIsFloat) != 0 { return 32 }
         return Int(asbd.mBitsPerChannel)

@@ -1,9 +1,3 @@
-//
-//  SettingsView.swift
-//  Neiro
-//
-//  Settings 场景，从 ⌘, 打开。
-//
 
 import SwiftUI
 import SwiftData
@@ -32,7 +26,6 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - 通用
 
 private struct GeneralSettings: View {
     @AppStorage(NeiroTheme.languageKey) private var languageRaw: String = NeiroLanguage.chinese.rawValue
@@ -75,13 +68,13 @@ private struct GeneralSettings: View {
     }
 }
 
-// MARK: - 外观
 
 private struct AppearanceSettings: View {
     @AppStorage(NeiroTheme.accentKey) private var accentHex: String = ""
     @AppStorage(NeiroTheme.appearanceKey) private var appearanceRaw: String = NeiroAppearance.system.rawValue
     @AppStorage(NeiroTheme.backgroundImagePathKey) private var bgImagePath: String = ""
     @AppStorage(NeiroTheme.backgroundOpacityKey) private var bgOpacity: Double = 0.35
+    @AppStorage(NeiroTheme.backgroundSizeRatioKey) private var bgSizeRatio: Double = 0.78
     @AppStorage(NeiroTheme.cornerRadiusKey) private var cornerRadius: Double = 14
     @AppStorage(NeiroTheme.animationSpeedKey) private var animationSpeed: Double = 1.0
 
@@ -183,8 +176,19 @@ private struct AppearanceSettings: View {
                     }
                 }
                 .disabled(bgImagePath.isEmpty)
+
+                LabeledContent(NeiroText.tr("大小", "Size")) {
+                    HStack {
+                        Slider(value: $bgSizeRatio, in: 0.5...0.95)
+                        Text("\(Int(bgSizeRatio * 100))%")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                }
+                .disabled(bgImagePath.isEmpty)
             } header: {
-                Text(NeiroText.tr("角色立绘（在所有列表页的右下角显示，保持原图比例）", "Character artwork (shown bottom-right across list pages, preserving aspect ratio)"))
+                Text(NeiroText.tr("角色立绘", "Character Artwork"))
             }
 
             Section(NeiroText.tr("细节", "Details")) {
@@ -219,7 +223,6 @@ private struct AppearanceSettings: View {
         .onAppear { syncCustomColorFromHex() }
     }
 
-    // MARK: helpers
 
     private var appearanceBinding: Binding<NeiroAppearance> {
         Binding(
@@ -257,7 +260,6 @@ private struct AppearanceSettings: View {
     }
 }
 
-// MARK: - 媒体库
 
 private struct LibrarySettings: View {
     @Environment(LibraryService.self) private var library
@@ -265,6 +267,7 @@ private struct LibrarySettings: View {
     @Environment(\.modelContext) private var context
     @AppStorage(NeiroTheme.copyOnImportKey) private var copyOnImport: Bool = true
     @State private var showClearConfirm = false
+    @State private var orphanResult: Int? = nil
 
     var body: some View {
         Form {
@@ -305,6 +308,29 @@ private struct LibrarySettings: View {
                 .keyboardShortcut("o", modifiers: [.command])
             }
 
+            Section(NeiroText.tr("二次元企划识别", "Anime Project Detection")) {
+                LabeledContent(NeiroText.tr("已支持的企划", "Supported Projects")) {
+                    Text("\(AnimeProjects.all.count)")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Text(NeiroText.tr(
+                    "BanG Dream! / Love Live! / Project SEKAI / Girls Band Cry / K-On! / iDOLM@STER / Hololive / Nijisanji / 米哈游 OST / Wuthering Waves / VOCALOID / LiSA / Aimer / ヨルシカ / YOASOBI / ZUTOMAYO …",
+                    "BanG Dream! / Love Live! / Project SEKAI / Girls Band Cry / K-On! / iDOLM@STER / Hololive / Nijisanji / HoYo-MiX / Wuthering Waves / VOCALOID / LiSA / Aimer / Yorushika / YOASOBI / ZUTOMAYO …"
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    Task { await library.reclassifyAnimeProjects() }
+                } label: {
+                    Label(NeiroText.tr("重新扫描企划归类", "Re-scan Anime Projects"),
+                          systemImage: "sparkles.rectangle.stack")
+                }
+                .disabled(isScanning)
+            }
+
             Section(NeiroText.tr("数据存放位置", "Data Location")) {
                 LabeledContent(NeiroText.tr("音乐库", "Music Library")) {
                     Text(NeiroPaths.musicLibrary.path)
@@ -339,6 +365,21 @@ private struct LibrarySettings: View {
             }
 
             Section(NeiroText.tr("危险操作", "Danger Zone")) {
+                Button {
+                    let removed = LibraryActions.purgeOrphans(in: context)
+                    orphanResult = removed
+                } label: {
+                    Label(NeiroText.tr("清理无效曲目（源文件已丢失）", "Purge Orphan Tracks (source missing)"),
+                          systemImage: "exclamationmark.triangle")
+                }
+                if let n = orphanResult {
+                    Text(NeiroText.tr("已移除 \(n) 首", "Removed \(n) tracks"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
                 Button(role: .destructive) {
                     showClearConfirm = true
                 } label: {
@@ -360,11 +401,15 @@ private struct LibrarySettings: View {
     }
 
     private func clearLibrary() {
-        // 删 Track / Album / Artist；保留 Playlist 的默认条目（kindRaw 是 favorite* / anime）
         try? context.delete(model: Track.self)
         try? context.delete(model: Album.self)
         try? context.delete(model: Artist.self)
         try? context.save()
+    }
+
+    private var isScanning: Bool {
+        if case .scanning = library.state { return true }
+        return false
     }
 
     @ViewBuilder
@@ -390,27 +435,63 @@ private struct LibrarySettings: View {
     }
 }
 
-// MARK: - 关于
 
 private struct AboutSettings: View {
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 64))
+                .font(.system(size: 72))
                 .foregroundStyle(.tint)
-            Text("Neiro").font(.largeTitle.bold())
-            Text("Version 0.2 beta v1.0").foregroundStyle(.secondary)
-            Divider().frame(width: 240)
-            VStack(alignment: .leading, spacing: 8) {
-                Label("MIT License", systemImage: "doc.text")
-                Label("Open source on your computer", systemImage: "lock.open")
-                Label("Built with SwiftUI & AVAudioEngine", systemImage: "hammer")
+                .symbolEffect(.pulse, options: .repeating)
+
+            VStack(spacing: 4) {
+                Text("Neiro").font(.largeTitle.bold())
+                Text(NeiroText.tr("音色 · 二次元向本地音乐播放器",
+                                  "Neiro · Anime-flavored local music player"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                versionTag("1.2 beta", color: .accentColor)
+                versionTag("v2", color: .secondary)
+            }
+
+            Divider().frame(width: 260)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Label(NeiroText.tr("MIT 开源协议", "MIT License"), systemImage: "doc.text")
+                Label(NeiroText.tr("源文件留在本地，不上传任何数据",
+                                   "Local-only, nothing leaves your Mac"),
+                      systemImage: "lock.shield")
+                Label(NeiroText.tr("基于 SwiftUI · SwiftData · AVAudioEngine 构建",
+                                   "Built with SwiftUI · SwiftData · AVAudioEngine"),
+                      systemImage: "hammer")
+                Label(NeiroText.tr("致谢 BanG Dream! / Love Live! / ProSeka 等所有企划",
+                                   "Thanks to all the anime music projects"),
+                      systemImage: "sparkles")
             }
             .foregroundStyle(.secondary)
             .font(.callout)
+
             Spacer()
+
+            Text(NeiroText.tr("发现 bug 或想新功能？欢迎反馈。",
+                              "Found a bug or want a feature? Feedback welcome."))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func versionTag(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.caption.monospacedDigit().weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.15), in: Capsule())
+            .overlay(Capsule().strokeBorder(color.opacity(0.35), lineWidth: 0.6))
+            .foregroundStyle(color)
     }
 }

@@ -1,12 +1,3 @@
-//
-//  RootView.swift
-//  Neiro
-//
-//  Apple Music v11 风格三栏 panel 布局：
-//    [ Sidebar ] [ Main (toolbar + content + InlinePlayerBar) ] [ Lyrics? ]
-//  每个 panel 竖向铺满整个窗口高度，浮在窗口背景之上。
-//
-
 import SwiftUI
 import SwiftData
 
@@ -39,19 +30,16 @@ struct RootView: View {
 
             VStack(spacing: verticalGap) {
                 HStack(spacing: verticalGap) {
-                    // 1. Sidebar panel（红绿灯在内部）
                     FloatingPanel {
                         Sidebar(selection: $router.selection)
                     }
                     .frame(width: sidebarWidth)
 
-                    // 2. Main panel（toolbar + content）
                     FloatingPanel {
                         MainPanel()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    // 3. Lyrics panel（可隐藏）
                     if router.isLyricsPresented {
                         FloatingPanel {
                             LyricsPanel()
@@ -66,7 +54,6 @@ struct RootView: View {
             .animation(.spring(response: 0.42, dampingFraction: 0.86),
                        value: router.isLyricsPresented)
 
-            // 全屏 NowPlaying
             if router.isNowPlayingPresented {
                 NowPlayingView()
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -80,7 +67,6 @@ struct RootView: View {
     }
 }
 
-// MARK: - Main panel
 
 private struct MainPanel: View {
     @Environment(AppRouter.self) private var router
@@ -95,7 +81,6 @@ private struct MainPanel: View {
     }
 }
 
-// MARK: - Floating panel
 
 struct FloatingPanel<Content: View>: View {
     @ViewBuilder var content: () -> Content
@@ -113,7 +98,6 @@ struct FloatingPanel<Content: View>: View {
     }
 }
 
-// MARK: - Background
 
 struct AccentTintedBackground: View {
     var body: some View {
@@ -134,7 +118,6 @@ struct AccentTintedBackground: View {
     }
 }
 
-// MARK: - Main toolbar（每页顶部 filter + 搜索 capsule）
 
 private struct MainToolbar: View {
     @Environment(AppRouter.self) private var router
@@ -145,12 +128,10 @@ private struct MainToolbar: View {
         HStack(spacing: 10) {
             Spacer()
 
-            // 导入按钮
             topGlassButton(systemName: "tray.and.arrow.down", help: NeiroText.tr("导入音乐 (⌘O)", "Import Music (⌘O)")) {
                 openWindow(id: "import")
             }
 
-            // 搜索胶囊
             SearchPill(text: $router.searchQuery) {
                 if !$0.isEmpty { router.go(.search) }
             }
@@ -238,7 +219,6 @@ private struct SearchPill: View {
     }
 }
 
-// MARK: - Content switch
 
 private struct ContentSwitch: View {
     let selection: NavigationDestination?

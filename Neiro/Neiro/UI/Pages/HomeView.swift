@@ -1,9 +1,3 @@
-//
-//  HomeView.swift
-//  Neiro
-//
-//  欢迎 + 每日推荐 + 库容统计。
-//
 
 import SwiftUI
 import SwiftData
@@ -18,6 +12,7 @@ struct HomeView: View {
     @Query private var artists: [Artist]
     @AppStorage(NeiroTheme.homeSubtitleKey) private var homeSubtitle: String = NeiroTheme.defaultHomeSubtitle
     @AppStorage(NeiroTheme.languageKey) private var languageRaw: String = NeiroLanguage.chinese.rawValue
+    @State private var pickRefreshRound: UInt64 = 0
 
     var body: some View {
         ScrollView {
@@ -36,7 +31,6 @@ struct HomeView: View {
         .scrollIndicators(.hidden)
     }
 
-    // MARK: - Hero
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -69,7 +63,6 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Daily picks
 
     private var dailyPicks: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -79,6 +72,16 @@ struct HomeView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button {
+                    pickRefreshRound &+= 1
+                } label: {
+                    Label(NeiroText.tr("刷新", "Refresh"), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(tracks.isEmpty)
+                .help(NeiroText.tr("刷新每日推荐", "Refresh daily picks"))
+
                 Button {
                     if let first = picks.first {
                         engine.load(url: first.fileURL)
@@ -113,13 +116,66 @@ struct HomeView: View {
         return df.string(from: Date())
     }
 
-    /// 每天用今日日期作 seed 推 6 首。当库小于 6 时全选。
     private var picks: [Track] {
         guard !tracks.isEmpty else { return [] }
-        let seed = todaySeed()
-        var generator = SeededGenerator(seed: seed)
-        let shuffled = tracks.shuffled(using: &generator)
-        return Array(shuffled.prefix(6))
+        let weighted = tracks.map { ($0, weight(for: $0)) }
+        var generator = SeededGenerator(seed: refreshedSeed())
+        return weightedSample(weighted, count: 6, using: &generator)
+    }
+
+    private func refreshedSeed() -> UInt64 {
+        let base = todaySeed()
+        let mixed = pickRefreshRound &* 0x9E3779B97F4A7C15 &+ 0xBF58476D1CE4E5B9
+        return base ^ mixed
+    }
+
+    private func weight(for t: Track) -> Double {
+        var w = 1.0
+        if t.isFavorite { w += 5 }
+        if let last = t.lastPlayedAt {
+            let days = Date().timeIntervalSince(last) / 86400
+            w += min(days * 0.5, 5)         // 越久没听越优先
+        } else {
+            w += 4                           // 从来没播过的也优先（探索新曲）
+        }
+        w -= min(Double(t.playCount) * 0.2, 3) // 听太多次降权，避免天天都是同首
+        return max(0.2, w)
+    }
+
+    private func weightedSample(_ items: [(Track, Double)], count: Int, using generator: inout SeededGenerator) -> [Track] {
+        var pool = items
+        var result: [Track] = []
+        var pickedArtistIDs: Set<PersistentIdentifier> = []
+        var pickedAlbumIDs: Set<PersistentIdentifier> = []
+
+        while result.count < count, !pool.isEmpty {
+            let diversifiedPool: [(Track, Double)] = pool.map { track, baseWeight in
+                var weight = baseWeight
+                if let artistID = track.artist?.persistentModelID, pickedArtistIDs.contains(artistID) {
+                    weight *= 0.35
+                }
+                if let albumID = track.album?.persistentModelID, pickedAlbumIDs.contains(albumID) {
+                    weight *= 0.45
+                }
+                return (track, max(0.05, weight))
+            }
+
+            let total = diversifiedPool.reduce(0.0) { $0 + $1.1 }
+            let r = Double.random(in: 0..<total, using: &generator)
+            var acc = 0.0
+            for (i, item) in diversifiedPool.enumerated() {
+                acc += item.1
+                if r < acc {
+                    let picked = item.0
+                    result.append(picked)
+                    if let artistID = picked.artist?.persistentModelID { pickedArtistIDs.insert(artistID) }
+                    if let albumID = picked.album?.persistentModelID { pickedAlbumIDs.insert(albumID) }
+                    pool.remove(at: i)
+                    break
+                }
+            }
+        }
+        return result
     }
 
     private func todaySeed() -> UInt64 {
@@ -128,7 +184,6 @@ struct HomeView: View {
         return UInt64(bitPattern: Int64(raw))
     }
 
-    // MARK: - Stats
 
     private var stats: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -155,7 +210,6 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Empty
 
     private var emptyHint: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -178,7 +232,6 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Stat card
 
 private struct StatCard: View {
     let icon: String
@@ -202,7 +255,6 @@ private struct StatCard: View {
     }
 }
 
-// MARK: - Daily pick card
 
 private struct DailyPickCard: View {
     let track: Track
@@ -266,14 +318,12 @@ private struct DailyPickArtwork: View {
     }
 }
 
-// MARK: - Seeded RNG（每天稳定）
 
 private struct SeededGenerator: RandomNumberGenerator {
     var state: UInt64
     init(seed: UInt64) { self.state = seed == 0 ? 0xdeadbeef : seed }
 
     mutating func next() -> UInt64 {
-        // splitmix64
         state &+= 0x9E3779B97F4A7C15
         var z = state
         z = (z ^ (z &>> 30)) &* 0xBF58476D1CE4E5B9

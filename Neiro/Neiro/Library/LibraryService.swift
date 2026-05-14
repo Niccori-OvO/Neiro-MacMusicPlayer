@@ -1,9 +1,3 @@
-//
-//  LibraryService.swift
-//  Neiro
-//
-//  扫描文件夹，提取元数据，写入 SwiftData。
-//
 
 import Foundation
 import AVFoundation
@@ -28,7 +22,6 @@ public final class LibraryService {
     private let container: ModelContainer
     private static let log = Logger(subsystem: "app.neiro", category: "Library")
 
-    /// 支持的音频扩展名
     public nonisolated static let supportedExtensions: Set<String> = [
         "flac", "alac", "m4a", "mp3", "wav", "wave",
         "aif", "aiff", "aifc", "caf", "aac", "mp4"
@@ -38,12 +31,8 @@ public final class LibraryService {
         self.container = container
     }
 
-    /// 导入用户拖进来 / 选中的任意 URL 集合。
-    /// - 文件 URL：直接 import 这一个文件
-    /// - 目录 URL：递归 import 该目录下所有支持的音频文件
-    /// 不会扫描传入 URL 之外的任何路径。
     public func importItems(_ items: [URL]) async {
-        // 沙箱：扫描和生成 bookmark 都需要根 URL 的 security scope 保持开启
+        // Keep all picked URLs scoped for the full import session.
         var startedAccess: [URL] = []
         for item in items where item.startAccessingSecurityScopedResource() {
             startedAccess.append(item)
@@ -55,8 +44,8 @@ public final class LibraryService {
         state = .scanning(found: 0)
         let context = ModelContext(container)
 
-        // 1. 把每个 URL 展开成"待导入的具体文件列表"
         let urls = await Task.detached(priority: .userInitiated) { () -> [URL] in
+            // Expand dropped folders into concrete audio-file URLs off the main actor.
             var collected: [URL] = []
             for item in items {
                 if Self.isDirectory(item) {
@@ -91,7 +80,6 @@ public final class LibraryService {
                 skipped += 1
             }
 
-            // 每 32 首存一次，避免一次性 commit 太大
             if i % 32 == 31 {
                 try? context.save()
             }
@@ -101,7 +89,6 @@ public final class LibraryService {
         state = .done(imported: imported, updated: updated, skipped: skipped)
     }
 
-    // MARK: - File enumeration
 
     nonisolated private static func enumerateAudioFiles(under root: URL) -> [URL] {
         let fm = FileManager.default
@@ -128,12 +115,10 @@ public final class LibraryService {
         supportedExtensions.contains(url.pathExtension.lowercased())
     }
 
-    // MARK: - Import one file
 
     private enum ImportResult { case imported, updated, skipped }
 
     private func importOne(url: URL, into context: ModelContext) async throws -> ImportResult {
-        // 1. 如果"复制到 Neiro 文件夹"开关启用，把文件复制过去；否则就用原路径
         let copyOn = UserDefaults.standard.object(forKey: NeiroTheme.copyOnImportKey) as? Bool ?? true
         let effectiveURL: URL = {
             if copyOn, let copied = copyToLibrary(url) {
@@ -145,18 +130,14 @@ public final class LibraryService {
         let path = effectiveURL.path
         let bookmark = makeBookmark(for: effectiveURL)
 
-        // 同名 .lrc 自动关联（在源文件目录里找 → 复制到 Lyrics/）
         let (lyricPath, lyricBookmark) = findAndCopyLyric(for: url, copy: copyOn)
 
-        // 已有记录？
         let descriptor = FetchDescriptor<Track>(predicate: #Predicate { $0.filePath == path })
         let existing = try context.fetch(descriptor).first
 
-        // 元数据
         let meta = try await MetadataExtractor.extract(url: url)
 
         if let track = existing {
-            // 已有：检查是否需要更新（基础字段）
             var didChange = false
             if track.title != meta.title { track.title = meta.title; didChange = true }
             if track.durationSeconds != meta.duration { track.durationSeconds = meta.duration; didChange = true }
@@ -167,7 +148,6 @@ public final class LibraryService {
             if track.discNumber != meta.discNumber { track.discNumber = meta.discNumber; didChange = true }
             if track.year != meta.year { track.year = meta.year; didChange = true }
             if track.genre != meta.genre { track.genre = meta.genre; didChange = true }
-            // bookmark 没有就补一个（兼容旧库）
             if track.bookmarkData == nil, let bookmark {
                 track.bookmarkData = bookmark
                 didChange = true
@@ -180,7 +160,6 @@ public final class LibraryService {
             return didChange ? .updated : .skipped
         }
 
-        // 新建 Track
         let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
         let track = Track(filePath: path,
                           title: meta.title,
@@ -197,12 +176,10 @@ public final class LibraryService {
         track.lyricFilePath = lyricPath
         track.lyricBookmarkData = lyricBookmark
 
-        // Artist
         let artistName = meta.artist.isEmpty ? "未知作曲家" : meta.artist
         let artist = try findOrCreateArtist(name: artistName, in: context)
         track.artist = artist
 
-        // Album
         let albumName = meta.album.isEmpty ? "未知专辑" : meta.album
         let album = try findOrCreateAlbum(name: albumName, artistName: artistName, year: meta.year, in: context)
         track.album = album
@@ -211,10 +188,68 @@ public final class LibraryService {
         }
 
         context.insert(track)
+        attachAnimeProjects(for: track, in: context)
         return .imported
     }
 
-    /// 把外部音频复制到 ~/Music/Neiro/，处理重名。失败返回 nil（沙箱写不了或目标占用）。
+    private func attachAnimeProjects(for track: Track, in context: ModelContext) {
+        let projects = AnimeProjects.match(
+            artist: track.artist?.name,
+            album: track.album?.name,
+            title: track.title
+        )
+        for project in projects {
+            let pl = findOrCreateAnimePlaylist(project: project, in: context)
+            if !pl.tracks.contains(where: { $0.id == track.id }) {
+                pl.tracks.append(track)
+            }
+        }
+    }
+
+    private func findOrCreateAnimePlaylist(project: AnimeProject, in context: ModelContext) -> Playlist {
+        let pid = project.id
+        let descriptor = FetchDescriptor<Playlist>(
+            predicate: #Predicate { $0.animeProjectID == pid }
+        )
+        if let existing = try? context.fetch(descriptor).first { return existing }
+        let pl = Playlist(name: project.nameZH, kind: .anime, sortOrder: 1000)
+        pl.animeProjectID = project.id
+        context.insert(pl)
+        return pl
+    }
+
+    public func reclassifyAnimeProjects() async {
+        state = .scanning(found: 0)
+        let context = ModelContext(container)
+
+        let animeKind = Playlist.Kind.anime.rawValue
+        let orphanDescriptor = FetchDescriptor<Playlist>(predicate: #Predicate {
+            $0.kindRaw == animeKind && $0.animeProjectID == nil
+        })
+        if let orphans = try? context.fetch(orphanDescriptor) {
+            for pl in orphans { context.delete(pl) }
+        }
+
+        let descriptor = FetchDescriptor<Track>()
+        let allTracks = (try? context.fetch(descriptor)) ?? []
+        for (i, t) in allTracks.enumerated() {
+            if i % 16 == 0 { state = .scanning(found: i) }
+            attachAnimeProjects(for: t, in: context)
+        }
+
+        let animeDescriptor = FetchDescriptor<Playlist>(predicate: #Predicate {
+            $0.kindRaw == animeKind
+        })
+        if let all = try? context.fetch(animeDescriptor) {
+            for pl in all where pl.tracks.isEmpty {
+                context.delete(pl)
+            }
+        }
+
+        try? context.save()
+        state = .done(imported: 0, updated: allTracks.count, skipped: 0)
+    }
+
     private func copyToLibrary(_ src: URL) -> URL? {
         let fm = FileManager.default
         let libDir = NeiroPaths.musicLibrary
@@ -228,7 +263,6 @@ public final class LibraryService {
         var target = libDir.appending(path: src.lastPathComponent)
         var index = 1
         while fm.fileExists(atPath: target.path) {
-            // 已存在则比较文件大小判断是否同一文件
             if let srcSize = (try? src.resourceValues(forKeys: [.fileSizeKey]).fileSize),
                let dstSize = (try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize),
                srcSize == dstSize {
@@ -246,8 +280,6 @@ public final class LibraryService {
         }
     }
 
-    /// 找音频文件同目录下的同名 .lrc；如果 copy=true 同时复制到 Lyrics/。
-    /// 返回 (路径, bookmark) 给 Track 存。
     private func findAndCopyLyric(for src: URL, copy: Bool) -> (String?, Data?) {
         let fm = FileManager.default
         let candidate = src.deletingPathExtension().appendingPathExtension("lrc")
@@ -282,12 +314,7 @@ public final class LibraryService {
         }
     }
 
-    /// 给一个用户选中的 URL 生成 security-scoped bookmark。
-    /// 必须在 URL 仍然 startAccessing 期间调用（fileImporter 给的 URL 立刻调即可）。
-    /// 非沙箱构建下也能用（普通 bookmark）。
     nonisolated private func makeBookmark(for url: URL) -> Data? {
-        // 不一定需要再 startAccessing，因为 ImportView 已经做过；
-        // 但 enumerator 给的子文件 URL 没有，必须先打开。
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }
         do {
@@ -322,7 +349,6 @@ public final class LibraryService {
     }
 }
 
-// MARK: - Metadata extraction
 
 enum MetadataExtractor {
 
@@ -344,7 +370,6 @@ enum MetadataExtractor {
     static func extract(url: URL) async throws -> Metadata {
         let asset = AVURLAsset(url: url)
 
-        // duration
         let duration: Double
         do {
             let cm = try await asset.load(.duration)
@@ -353,7 +378,6 @@ enum MetadataExtractor {
             duration = 0
         }
 
-        // common metadata
         let allMeta = (try? await asset.load(.commonMetadata)) ?? []
         var title = url.deletingPathExtension().lastPathComponent
         var artist = ""
@@ -380,8 +404,6 @@ enum MetadataExtractor {
             }
         }
 
-        // format-specific metadata（ID3 / iTunes / Vorbis comments）
-        // 关键：FLAC 经常在 commonKey 上读不到 artist/album，必须扫这里。
         let defaultTitle = url.deletingPathExtension().lastPathComponent
         var trackNumber: Int?
         var discNumber: Int?
@@ -393,29 +415,24 @@ enum MetadataExtractor {
                 guard let keyAny = item.key else { continue }
                 let keyStr = "\(keyAny)".lowercased()
 
-                // ---- Title fallback ----
                 if title == defaultTitle,
                    matchesAny(keyStr, ["title", "tit2", "©nam", "©NAM", "inam"]) {
                     if let v = try? await item.load(.stringValue), !v.isEmpty { title = v }
                 }
-                // ---- Artist fallback ----
                 else if artist.isEmpty,
                         matchesAny(keyStr, ["artist", "tpe1", "©art", "©ART", "iart", "album_artist", "albumartist", "tpe2"]) {
                     if let v = try? await item.load(.stringValue), !v.isEmpty { artist = v }
                 }
-                // ---- Album fallback ----
                 else if album.isEmpty,
                         matchesAny(keyStr, ["album", "talb", "©alb", "©ALB", "iprd"]) {
                     if let v = try? await item.load(.stringValue), !v.isEmpty { album = v }
                 }
-                // ---- Artwork fallback ----
                 else if artwork == nil,
                         matchesAny(keyStr, ["picture", "apic", "covr", "metadata_block_picture"]) {
                     if let data = try? await item.load(.dataValue) {
                         artwork = downscaleArtwork(data)
                     }
                 }
-                // ---- Track number ----
                 else if matchesAny(keyStr, ["tracknumber", "trkn", "trck"]) {
                     if let v = try? await item.load(.stringValue) {
                         trackNumber = Int(v.split(separator: "/").first.map(String.init) ?? "") ?? trackNumber
@@ -423,7 +440,6 @@ enum MetadataExtractor {
                         trackNumber = v.intValue
                     }
                 }
-                // ---- Disc number ----
                 else if matchesAny(keyStr, ["discnumber", "disk", "tpos"]) {
                     if let v = try? await item.load(.stringValue) {
                         discNumber = Int(v.split(separator: "/").first.map(String.init) ?? "") ?? discNumber
@@ -431,11 +447,9 @@ enum MetadataExtractor {
                         discNumber = v.intValue
                     }
                 }
-                // ---- Genre ----
                 else if matchesAny(keyStr, ["genre", "tcon", "©gen", "©GEN"]) {
                     if let v = try? await item.load(.stringValue) { genre = v }
                 }
-                // ---- Year ----
                 else if matchesAny(keyStr, ["year", "date", "tyer", "tdrc", "©day"]) {
                     if year == nil, let v = try? await item.load(.stringValue), let y = parseYear(v) {
                         year = y
@@ -444,7 +458,6 @@ enum MetadataExtractor {
             }
         }
 
-        // audio stream info（采样率 / 位深 / 声道数）
         var sampleRate: Double = 0
         var bitDepth: Int = 0
         var channels: Int = 0
@@ -465,7 +478,6 @@ enum MetadataExtractor {
                 }
             }
         } catch {
-            // 留 0 也无妨
         }
 
         return Metadata(title: title, artist: artist, album: album,
@@ -476,7 +488,6 @@ enum MetadataExtractor {
                         artwork: artwork)
     }
 
-    /// keyStr 是否完全等于或包含 needles 之一（用 contains 容错大小写已经 lowercase 过）。
     private static func matchesAny(_ keyStr: String, _ needles: [String]) -> Bool {
         for n in needles {
             let lower = n.lowercased()
@@ -486,14 +497,12 @@ enum MetadataExtractor {
     }
 
     private static func parseYear(_ s: String) -> Int? {
-        // 接受 "1998"、"1998-04-23"、"04/23/1998" 这类
         let digits = s.unicodeScalars.filter { CharacterSet.decimalDigits.contains($0) }
         guard digits.count >= 4 else { return nil }
         let yearStr = String(String.UnicodeScalarView(digits.prefix(4)))
         return Int(yearStr)
     }
 
-    /// 缩到 256x256 JPEG，避免几十张专辑封面把 SwiftData 撑爆
     private static func downscaleArtwork(_ data: Data, target: CGFloat = 256) -> Data? {
         guard let image = NSImage(data: data) else { return nil }
         let size = image.size

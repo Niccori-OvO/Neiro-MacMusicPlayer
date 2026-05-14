@@ -2,7 +2,8 @@
 //  NeiroApp.swift
 //  Neiro
 //
-//  Created by Ethan Shen on 11/05/2026.
+//  Created by Ethan Shen on 21/March/2026.
+//  都是看少女乐队看的...
 //
 
 import SwiftUI
@@ -69,7 +70,6 @@ struct NeiroApp: App {
             }
         }
 
-        // 独立的导入窗口
         Window(NeiroText.tr("导入音乐", "Import Music"), id: "import") {
             ImportView()
                 .environment(engine)

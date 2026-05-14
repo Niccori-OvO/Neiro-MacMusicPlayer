@@ -1,9 +1,3 @@
-//
-//  SearchView.swift
-//  Neiro
-//
-//  全库搜索结果：曲名 / 作曲家 / 专辑。
-//
 
 import SwiftUI
 import SwiftData

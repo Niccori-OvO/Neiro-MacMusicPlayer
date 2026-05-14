@@ -1,9 +1,3 @@
-//
-//  Sidebar.swift
-//  Neiro
-//
-//  左侧固定导航。
-//
 
 import SwiftUI
 import SwiftData
@@ -38,39 +32,26 @@ struct Sidebar: View {
             }
 
             Section {
-                ForEach(playlists) { pl in
-                    Label {
-                        HStack {
-                            Text(pl.displayName).lineLimit(1)
-                            Spacer()
-                            if pl.tracks.count > 0 {
-                                Text("\(pl.tracks.count)")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    } icon: {
-                        Image(systemName: icon(for: pl.kind))
-                            .frame(width: 18, alignment: .center)
-                    }
-                    .padding(.vertical, 3)
-                    .tag(NavigationDestination.playlist(pl.id))
-                    .contextMenu {
-                        Button(NeiroText.tr("打开", "Open")) { router.go(.playlist(pl.id)) }
-                        if pl.kind == .userCreated {
-                            Divider()
-                            Button(NeiroText.tr("重命名…", "Rename…")) {
-                                renamingID = pl.id
-                                renamingText = pl.name
-                            }
-                            Button(NeiroText.tr("删除", "Delete"), role: .destructive) { delete(pl) }
-                        }
-                    }
+                ForEach(nonAnimePlaylists) { pl in
+                    playlistRow(pl)
                 }
             } header: {
                 sectionHeader(title: NeiroText.tr("播放列表", "Playlists")) {
                     newPlaylistName = ""
                     showNewPlaylistSheet = true
+                }
+            }
+
+            ForEach(AnimeCategory.allCases.sorted(by: { $0.sortOrder < $1.sortOrder })) { category in
+                let items = animePlaylists(in: category)
+                if !items.isEmpty {
+                    Section {
+                        ForEach(items) { pl in
+                            playlistRow(pl)
+                        }
+                    } header: {
+                        sectionHeader(title: category.sectionTitle, action: nil)
+                    }
                 }
             }
             }
@@ -92,7 +73,6 @@ struct Sidebar: View {
         }
     }
 
-    // MARK: - Subviews
 
     @ViewBuilder
     private func sectionHeader(title: String, action: (() -> Void)?) -> some View {
@@ -129,17 +109,59 @@ struct Sidebar: View {
         .tag(dest)
     }
 
-    private func icon(for kind: Playlist.Kind) -> String {
-        switch kind {
-        case .favoriteTracks:  "heart"
-        case .favoriteAlbums:  "square.stack"
-        case .favoriteArtists: "star"
-        case .anime:           "sparkles"
-        case .userCreated:     "music.note.list"
+    @ViewBuilder
+    private func playlistRow(_ pl: Playlist) -> some View {
+        Label {
+            HStack {
+                Text(pl.displayName).lineLimit(1)
+                Spacer()
+                if pl.tracks.count > 0 {
+                    Text("\(pl.tracks.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } icon: {
+            Image(systemName: iconFor(pl))
+                .frame(width: 18, alignment: .center)
+        }
+        .padding(.vertical, 3)
+        .tag(NavigationDestination.playlist(pl.id))
+        .contextMenu {
+            Button(NeiroText.tr("打开", "Open")) { router.go(.playlist(pl.id)) }
+            if pl.kind == .userCreated {
+                Divider()
+                Button(NeiroText.tr("重命名…", "Rename…")) {
+                    renamingID = pl.id
+                    renamingText = pl.name
+                }
+                Button(NeiroText.tr("删除", "Delete"), role: .destructive) { delete(pl) }
+            }
         }
     }
 
-    // MARK: - Actions
+    private var nonAnimePlaylists: [Playlist] {
+        playlists.filter { $0.kind != .anime }
+    }
+
+    private func animePlaylists(in category: AnimeCategory) -> [Playlist] {
+        playlists.filter { $0.animeCategory == category }
+            .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+    }
+
+    private func iconFor(_ pl: Playlist) -> String {
+        if pl.kind == .anime, let cat = pl.animeCategory {
+            return cat.symbolName
+        }
+        switch pl.kind {
+        case .favoriteTracks:  return "heart"
+        case .favoriteAlbums:  return "square.stack"
+        case .favoriteArtists: return "star"
+        case .anime:           return "sparkles"
+        case .userCreated:     return "music.note.list"
+        }
+    }
+
 
     private func createPlaylist(named name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -172,7 +194,6 @@ struct Sidebar: View {
     }
 }
 
-// MARK: - Sheets
 
 private struct IDWrapper: Identifiable { let id: UUID }
 
@@ -223,15 +244,60 @@ private struct WindowControlsRow: View {
 }
 
 private struct SystemWindowControlsHost: NSViewRepresentable {
+    final class HostView: NSView {
+        var onLayout: (() -> Void)?
+        override func layout() {
+            super.layout()
+            onLayout?()
+        }
+    }
+
+    final class Coordinator {
+        weak var hostView: NSView?
+        weak var window: NSWindow?
+        var observers: [NSObjectProtocol] = []
+
+        deinit {
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+        let view = HostView(frame: .zero)
         view.wantsLayer = false
+        view.onLayout = { [weak coordinator = context.coordinator] in
+            guard let coordinator, let host = coordinator.hostView, let window = coordinator.window else { return }
+            attachSystemButtons(to: host, in: window)
+        }
+        context.coordinator.hostView = view
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
             guard let window = nsView.window else { return }
+            context.coordinator.hostView = nsView
+            if context.coordinator.window !== window {
+                context.coordinator.observers.forEach { NotificationCenter.default.removeObserver($0) }
+                context.coordinator.observers.removeAll()
+                context.coordinator.window = window
+                let names: [Notification.Name] = [
+                    NSWindow.didResizeNotification,
+                    NSWindow.didMoveNotification,
+                    NSWindow.didBecomeKeyNotification,
+                    NSWindow.didEndLiveResizeNotification,
+                    NSWindow.didEnterFullScreenNotification,
+                    NSWindow.didExitFullScreenNotification
+                ]
+                context.coordinator.observers = names.map { name in
+                    NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { _ in
+                        guard let host = context.coordinator.hostView, let win = context.coordinator.window else { return }
+                        attachSystemButtons(to: host, in: win)
+                    }
+                }
+            }
             attachSystemButtons(to: nsView, in: window)
         }
     }
@@ -249,6 +315,7 @@ private struct SystemWindowControlsHost: NSViewRepresentable {
             button.translatesAutoresizingMaskIntoConstraints = true
             let y = max(0, (host.bounds.height - button.frame.height) * 0.5)
             button.frame.origin = CGPoint(x: CGFloat(index) * (button.frame.width + spacing), y: y)
+            button.autoresizingMask = []
             button.isHidden = false
         }
     }

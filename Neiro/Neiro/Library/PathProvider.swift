@@ -1,7 +1,3 @@
-//
-//  PathProvider.swift
-//  Neiro
-//
 
 import Foundation
 import os
@@ -10,33 +6,26 @@ public enum NeiroPaths {
 
     private static let log = Logger(subsystem: "app.neiro", category: "Paths")
 
-    /// App 配置目录：~/Library/Application Support/Neiro/
     public static var appSupport: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appending(path: "Library/Application Support")
         return base.appending(path: "Neiro")
     }
 
-    /// SwiftData 数据库文件
     public static var databaseURL: URL {
         appSupport.appending(path: "library.store")
     }
 
-    /// 首选音乐库目录：~/Music/Neiro/。需要 com.apple.security.assets.music.read-write
-    /// entitlement，否则沙箱无法写入。
     public static var preferredMusicLibrary: URL {
         let music = FileManager.default.urls(for: .musicDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appending(path: "Music")
         return music.appending(path: "Neiro")
     }
 
-    /// 兜底音乐库（沙箱内一定能写）：~/Library/Application Support/Neiro/Music/
     public static var fallbackMusicLibrary: URL {
         appSupport.appending(path: "Music")
     }
 
-    /// 实际的 Neiro 音乐文件夹。优先 ~/Music/Neiro/，不可写则退到 Application Support。
-    /// 结果在第一次访问时确定并缓存。
     public static var musicLibrary: URL {
         if let cached = _resolvedMusicLibrary { return cached }
         let resolved = resolveMusicLibrary()
@@ -44,7 +33,6 @@ public enum NeiroPaths {
         return resolved
     }
 
-    /// 歌词文件夹：放在音乐库下的 Lyrics/。
     public static var lyricsLibrary: URL {
         let url = musicLibrary.appending(path: "Lyrics")
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

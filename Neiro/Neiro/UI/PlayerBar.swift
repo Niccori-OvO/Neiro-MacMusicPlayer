@@ -1,13 +1,3 @@
-//
-//  PlayerBar.swift
-//  Neiro
-//
-//  Inline 胶囊播放栏：放在主 panel 底部内，不再跨整个窗口宽度。
-//  布局（Apple Music v11 风格）：
-//    左：shuffle · prev · play · next · repeat
-//    中：当前曲目卡（封面 + 标题/作曲家 + 喜爱）
-//    右：歌词 · 队列 · 音量
-//
 
 import SwiftUI
 import SwiftData
@@ -24,6 +14,7 @@ struct InlinePlayerBar: View {
     @State private var scrubValue: Double = 0
     @State private var showQueue = false
     @State private var showVolume = false
+    @State private var lastRecordedTrackID: PersistentIdentifier? = nil
     @State private var seekHoldTask: Task<Void, Never>?
     @State private var mediaKeyMonitor: Any?
 
@@ -50,9 +41,19 @@ struct InlinePlayerBar: View {
         )
         .onAppear { installMediaKeyMonitorIfNeeded() }
         .onDisappear { uninstallMediaKeyMonitor() }
+        .onChange(of: engine.currentURL) { _, _ in
+            lastRecordedTrackID = nil
+        }
+        .onChange(of: engine.currentTime) { _, t in
+            let threshold = min(30.0, max(15.0, engine.duration * 0.5))
+            guard t >= threshold,
+                  let track = currentTrack,
+                  lastRecordedTrackID != track.persistentModelID else { return }
+            LibraryActions.recordPlay(track, in: context)
+            lastRecordedTrackID = track.persistentModelID
+        }
     }
 
-    // MARK: - Left transport
 
     private var transportCluster: some View {
         HStack(spacing: 10) {
@@ -105,7 +106,6 @@ struct InlinePlayerBar: View {
         }
     }
 
-    // MARK: - Middle now-playing card
 
     private var nowPlayingCard: some View {
         HStack(spacing: 10) {
@@ -126,7 +126,7 @@ struct InlinePlayerBar: View {
                             }
                         }
                         HStack(spacing: 6) {
-                            Text(currentTrack?.artist?.name ?? engine.currentURL.map { _ in NeiroText.tr("未知作曲家", "Unknown Artist") } ?? "")
+                            Text(displayArtist)
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -182,7 +182,6 @@ struct InlinePlayerBar: View {
         .disabled(engine.currentURL == nil)
     }
 
-    // MARK: - Right cluster
 
     @ViewBuilder
     private var rightCluster: some View {
@@ -250,18 +249,25 @@ struct InlinePlayerBar: View {
         }
     }
 
-    // MARK: - Helpers
 
     private var isPlaying: Bool { engine.state == .playing }
 
     private var currentTrack: Track? {
-        guard let path = engine.currentURL?.path else { return nil }
-        return allTracks.first(where: { $0.filePath == path })
+        guard let url = engine.currentURL else { return nil }
+        return allTracks.first(where: { $0.matches(url: url) })
     }
 
     private var displayTitle: String {
         if let t = currentTrack?.title, !t.isEmpty { return t }
-        return engine.currentURL?.deletingPathExtension().lastPathComponent ?? NeiroText.tr("没有曲目", "No Track")
+        guard let url = engine.currentURL else { return NeiroText.tr("没有曲目", "No Track") }
+        let raw = url.deletingPathExtension().lastPathComponent
+        return raw.removingPercentEncoding ?? raw
+    }
+
+    private var displayArtist: String {
+        if let name = currentTrack?.artist?.name, !name.isEmpty { return name }
+        if engine.currentURL != nil { return NeiroText.tr("未知作曲家", "Unknown Artist") }
+        return ""
     }
 
     private func togglePlayPause() {
@@ -287,12 +293,10 @@ struct InlinePlayerBar: View {
     }
 
     private func previousOrRestartTrack() {
-        // 优先用 engine 内部队列
         if !engine.queue.isEmpty, engine.currentIndex != nil {
             engine.previousTrack()
             return
         }
-        // 全库 fallback
         guard let currentURL = engine.currentURL else { return }
         if engine.currentTime > 3 {
             engine.seek(toSeconds: 0)
@@ -308,12 +312,10 @@ struct InlinePlayerBar: View {
     }
 
     private func nextTrack() {
-        // 优先用 engine 内部队列
         if !engine.queue.isEmpty, engine.currentIndex != nil {
             engine.nextTrack()
             return
         }
-        // 全库 fallback
         guard let currentURL = engine.currentURL else { return }
         guard let idx = sortedTracks.firstIndex(where: { $0.filePath == currentURL.path }) else { return }
         let nextIndex = min(sortedTracks.count - 1, idx + 1)
@@ -371,18 +373,16 @@ struct InlinePlayerBar: View {
     }
 }
 
-// MARK: - Queue popover
 
 private struct QueuePopover: View {
     @Environment(AudioEngine.self) private var engine
     @Query private var allTracks: [Track]
 
     private var currentTrack: Track? {
-        guard let path = engine.currentURL?.path else { return nil }
-        return allTracks.first(where: { $0.filePath == path })
+        guard let url = engine.currentURL else { return nil }
+        return allTracks.first(where: { $0.matches(url: url) })
     }
 
-    /// 当前曲之后的 URL 列表
     private func upcomingTracks() -> [URL] {
         guard let cur = engine.currentIndex, cur < engine.queue.count - 1 else { return [] }
         return Array(engine.queue[(cur + 1)...])

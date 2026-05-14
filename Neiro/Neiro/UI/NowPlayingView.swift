@@ -1,10 +1,3 @@
-//
-//  NowPlayingView.swift
-//  Neiro
-//
-//  全屏播放页：大封面 + 模糊背景 + 标题 + 进度 + 控件 + 喜爱。
-//  从 PlayerBar 点封面 / 标题区进入；左上角 chevron.down 收起。
-//
 
 import SwiftUI
 import SwiftData
@@ -22,13 +15,11 @@ struct NowPlayingView: View {
     var body: some View {
         @Bindable var engine = engine
         ZStack {
-            // 背景层 + 点击空白处关闭
             background
                 .contentShape(Rectangle())
                 .onTapGesture {
                     router.dismissNowPlaying()
                 }
-            // 内容层不响应背景的 tap（控件单独处理）
             content
                 .allowsHitTesting(true)
         }
@@ -36,7 +27,6 @@ struct NowPlayingView: View {
         .ignoresSafeArea()
     }
 
-    // MARK: - Background
 
     private var background: some View {
         Group {
@@ -59,7 +49,6 @@ struct NowPlayingView: View {
         .ignoresSafeArea()
     }
 
-    // MARK: - Content
 
     private var content: some View {
         GeometryReader { geo in
@@ -138,14 +127,14 @@ struct NowPlayingView: View {
     }
 
     private func titleBlock(titleSize: CGFloat) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             Text(displayTitle)
                 .font(.system(size: titleSize, weight: .bold))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
 
             Text(currentTrack?.artist?.name ?? NeiroText.tr("未知作曲家", "Unknown Artist"))
-                .font(.title3)
+                .font(.title2.weight(.medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
@@ -156,7 +145,7 @@ struct NowPlayingView: View {
                     .lineLimit(1)
             }
         }
-        .frame(maxWidth: 540)
+        .frame(maxWidth: 580)
     }
 
     private func progress(width: CGFloat) -> some View {
@@ -228,20 +217,18 @@ struct NowPlayingView: View {
             }
             .disabled(engine.currentURL == nil)
 
-            // 占位让两侧对称
             Image(systemName: "heart")
                 .font(.system(size: 22))
                 .opacity(0)
         }
     }
 
-    // MARK: - Helpers
 
     private var isPlaying: Bool { engine.state == .playing }
 
     private var currentTrack: Track? {
-        guard let path = engine.currentURL?.path else { return nil }
-        return allTracks.first(where: { $0.filePath == path })
+        guard let url = engine.currentURL else { return nil }
+        return allTracks.first(where: { $0.matches(url: url) })
     }
 
     private var displayTitle: String {

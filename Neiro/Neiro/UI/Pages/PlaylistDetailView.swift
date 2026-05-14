@@ -1,9 +1,3 @@
-//
-//  PlaylistDetailView.swift
-//  Neiro
-//
-//  单个 playlist 详情。userCreated 类型可以「添加歌曲」（Phase 2）。
-//
 
 import SwiftUI
 import SwiftData
@@ -72,7 +66,7 @@ struct PlaylistDetailView: View {
             .shadow(radius: 6, y: 3)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(badgeText(for: pl.kind))
+                Text(badge(for: pl))
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
                 Text(pl.displayName)
@@ -212,7 +206,6 @@ struct PlaylistDetailView: View {
             }
             .width(40)
 
-            // Spacer column 吃右侧空间，让前面 columns 靠左
             TableColumn("") { _ in Color.clear }
                 .width(min: 0, ideal: 200, max: 999)
         }
@@ -230,7 +223,6 @@ struct PlaylistDetailView: View {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    // MARK: - Kind helpers
 
     private func icon(for kind: Playlist.Kind) -> String {
         switch kind {
@@ -242,13 +234,17 @@ struct PlaylistDetailView: View {
         }
     }
 
-    private func badgeText(for kind: Playlist.Kind) -> String {
-        switch kind {
-        case .favoriteTracks:  NeiroText.tr("默认 · 喜爱", "Default · Favorites")
-        case .favoriteAlbums:  NeiroText.tr("默认 · 专辑", "Default · Albums")
-        case .favoriteArtists: NeiroText.tr("默认 · 作曲家", "Default · Artists")
-        case .anime:           NeiroText.tr("默认 · 二次元企划", "Default · Anime")
-        case .userCreated:     NeiroText.tr("自建", "Custom")
+    private func badge(for pl: Playlist) -> String {
+        switch pl.kind {
+        case .favoriteTracks:  return NeiroText.tr("默认 · 喜爱", "Default · Favorites")
+        case .favoriteAlbums:  return NeiroText.tr("默认 · 专辑", "Default · Albums")
+        case .favoriteArtists: return NeiroText.tr("默认 · 作曲家", "Default · Artists")
+        case .anime:
+            if let cat = pl.animeCategory {
+                return "\(NeiroText.tr("自动归类", "Auto")) · \(cat.badgeText)"
+            }
+            return NeiroText.tr("自动归类", "Auto")
+        case .userCreated:     return NeiroText.tr("自建", "Custom")
         }
     }
 
@@ -263,7 +259,6 @@ struct PlaylistDetailView: View {
     }
 }
 
-// MARK: - Add tracks sheet
 
 private struct AddTracksSheet: View {
     let playlist: Playlist

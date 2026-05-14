@@ -1,14 +1,7 @@
-//
-//  SharedViews.swift
-//  Neiro
-//
-//  各浏览页共用的小组件。
-//
 
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Page header
 
 struct PageHeader: View {
     let title: String
@@ -34,7 +27,6 @@ struct PageHeader: View {
     }
 }
 
-// MARK: - Empty state
 
 struct EmptyState: View {
     let systemImage: String
@@ -65,11 +57,8 @@ struct EmptyState: View {
     }
 }
 
-// MARK: - Page background with character artwork
 
 public extension View {
-    /// 给一个页面加立绘半透明背景层。立绘从 @AppStorage 读，靠右下角，保持原图比例。
-    /// 所有列表页都应该用同一个，视觉一致。
     func neiroPageBackground() -> some View {
         modifier(NeiroPageBackground())
     }
@@ -79,6 +68,7 @@ private struct NeiroPageBackground: ViewModifier {
     @AppStorage(NeiroTheme.backgroundImagePathKey) private var imagePath: String = ""
     @AppStorage(NeiroTheme.backgroundOpacityKey) private var opacity: Double = 0.35
     @AppStorage(NeiroTheme.backgroundEnabledKey) private var enabled: Bool = true
+    @AppStorage(NeiroTheme.backgroundSizeRatioKey) private var sizeRatio: Double = 0.78
 
     private var artworkVisible: Bool {
         !imagePath.isEmpty && enabled
@@ -89,16 +79,19 @@ private struct NeiroPageBackground: ViewModifier {
             content
                 .environment(\.neiroArtworkVisible, artworkVisible)
             if artworkVisible {
-                CharacterArtworkLayer(imagePath: imagePath, opacity: opacity)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
+                CharacterArtworkLayer(
+                    imagePath: imagePath,
+                    opacity: opacity,
+                    sizeRatio: CGFloat(sizeRatio)
+                )
+                .allowsHitTesting(false)
+                .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: artworkVisible)
     }
 }
 
-// MARK: - 立绘开关 / 右键菜单 helper
 
 private struct NeiroArtworkVisibleKey: EnvironmentKey {
     static let defaultValue: Bool = false
@@ -111,7 +104,6 @@ public extension EnvironmentValues {
     }
 }
 
-/// 列表区右键菜单的统一立绘开关组（任何 view 加 .neiroArtworkMenu() 即可）
 public extension View {
     func neiroArtworkMenu() -> some View {
         modifier(NeiroArtworkMenu())
@@ -173,19 +165,23 @@ private struct NeiroArtworkMenu: ViewModifier {
     }
 }
 
-/// 立绘图层：保持原图比例，底边对齐父容器底部，靠右。
-/// 高度最多取父容器的 78%，宽度按比例计算。
 struct CharacterArtworkLayer: View {
     let imagePath: String
     let opacity: Double
+    let sizeRatio: CGFloat
+
+    init(imagePath: String, opacity: Double, sizeRatio: CGFloat = 0.78) {
+        self.imagePath = imagePath
+        self.opacity = opacity
+        self.sizeRatio = sizeRatio
+    }
 
     var body: some View {
         if let img = NSImage(contentsOfFile: imagePath) {
             GeometryReader { geo in
-                let maxH = geo.size.height * 0.78
-                let maxW = geo.size.width * 0.30
+                let maxH = geo.size.height * sizeRatio
+                let maxW = geo.size.width * (0.25 + sizeRatio * 0.15)
                 let aspect = img.size.width / max(img.size.height, 1)
-                // 高度优先（保证一定纵向高度），按比例算宽，必要时按 maxW 收缩
                 let h0 = maxH
                 let w0 = h0 * aspect
                 let (w, h): (CGFloat, CGFloat) = {
@@ -198,18 +194,29 @@ struct CharacterArtworkLayer: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: w, height: h)
+                    .mask {
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear,                  location: 0.00),
+                                .init(color: .black.opacity(0.35),    location: 0.10),
+                                .init(color: .black.opacity(0.85),    location: 0.28),
+                                .init(color: .black,                  location: 0.45),
+                                .init(color: .black,                  location: 1.00),
+                            ],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    }
                     .opacity(opacity)
-                    // 底边贴 container 底，靠右
                     .position(x: geo.size.width - w / 2 - 6,
                               y: geo.size.height - h / 2)
                     .animation(.easeInOut(duration: 0.35), value: imagePath)
                     .animation(.easeInOut(duration: 0.25), value: opacity)
+                    .animation(.easeInOut(duration: 0.25), value: sizeRatio)
             }
         }
     }
 }
 
-// MARK: - Album thumbnail
 
 struct AlbumThumbnail: View {
     let data: Data?
@@ -217,7 +224,6 @@ struct AlbumThumbnail: View {
 
     var body: some View {
         ZStack {
-            // 为带透明通道的封面提供底色，避免出现“切边/缺角”视觉问题。
             RoundedRectangle(cornerRadius: max(4, size * 0.08), style: .continuous)
                 .fill(Color.black.opacity(0.18))
 
