@@ -191,5 +191,7 @@ MIT — 自己拿去玩，记得开心就好 OvO
 而且，我第一次做这样的项目，没有AI教会我很多知识的话确实做不出来，这真的是一次很好的学习（确信
 
 
-Copyright (c) 2026 Ethan Shen (Niccori-OvO) All right reservd
+Copyright (c) 2026 Ethan Shen (Niccori-OvO). This project is licensed under the MIT License
+
+
 如需调用代码等请发Email哦
