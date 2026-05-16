@@ -12,6 +12,8 @@ struct InlinePlayerBar: View {
 
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
+    /// 松手后 0.3s 内 slider 显示用户拖到的位置，等 engine 回填精确值再切换
+    @State private var seekTargetHoldUntil: Date = .distantPast
     @State private var showQueue = false
     @State private var showVolume = false
     @State private var lastRecordedTrackID: PersistentIdentifier? = nil
@@ -163,7 +165,12 @@ struct InlinePlayerBar: View {
     private var progressSlider: some View {
         Slider(
             value: Binding(
-                get: { isScrubbing ? scrubValue : engine.currentTime },
+                get: {
+                    // 优先级：正在拖 > 刚松手保护期 > engine 真实时间
+                    if isScrubbing { return scrubValue }
+                    if Date() < seekTargetHoldUntil { return scrubValue }
+                    return engine.currentTime
+                },
                 set: { newVal in
                     scrubValue = newVal
                     isScrubbing = true
@@ -173,7 +180,9 @@ struct InlinePlayerBar: View {
                 if editing {
                     isScrubbing = true
                 } else {
+                    // 松开：跳转 + 进入 300ms 保护期，期间 slider 显示 scrubValue 不被 engine.currentTime 覆盖
                     engine.seek(toSeconds: scrubValue)
+                    seekTargetHoldUntil = Date().addingTimeInterval(0.3)
                     isScrubbing = false
                 }
             }

@@ -61,6 +61,8 @@ public final class AudioEngine {
 
     private var securityScopedURL: URL?
     private var positionTimer: Timer?
+    /// seek 后短暂屏蔽 updateCurrentTime 的窗口，避免视觉回弹
+    private var seekJustHappenedUntil: Date = .distantPast
 
     private static let log = Logger(subsystem: "app.neiro", category: "Engine")
 
@@ -262,8 +264,18 @@ public final class AudioEngine {
         let safeUpperBound = max(0, duration - 0.05)
         let clamped = max(0, min(seconds, safeUpperBound))
         let frame = AVAudioFramePosition(clamped * sr)
-        currentTime = clamped
+
+        // 关键：用 stop() 替代 pause()+reset()。
+        // reset() 只清待播 buffer，不归零 player.sampleTime，
+            // 导致 updateCurrentTime 把旧 sampleTime 加进新位置 → 进度条立刻回弹到错误位置。
+        // stop() 同时清 buffer 并归零 sampleTime。
         player.stop()
+
+        // 立刻反映新位置，避免 timer 还没来得及更新前 UI 仍显示旧值
+        currentTime = clamped
+        // 暂时屏蔽 updateCurrentTime 几个 tick，等 player.play() 后 lastRenderTime 重置
+        seekJustHappenedUntil = Date().addingTimeInterval(0.25)
+
         do {
             try startEngineIfNeeded()
             scheduleAndPlay(from: frame, autoPlay: wasPlaying)
@@ -309,7 +321,7 @@ public final class AudioEngine {
     }
 
     private func handlePlaybackFinished() {
-        player.stop()
+        // Avoid a synchronous stop on MainActor here to prevent QoS inversions.
         stopPositionTimer()
         currentTime = duration
 
@@ -351,13 +363,19 @@ public final class AudioEngine {
     }
 
     private func updateCurrentTime() {
+        // seek 后 0.25s 内不要让 timer 覆盖 currentTime
+        // 因为 player.play() 后 lastRenderTime 可能还反映旧 buffer 残留
+        if Date() < seekJustHappenedUntil { return }
+
         guard let f = file,
               let nodeTime = player.lastRenderTime,
               let playerTime = player.playerTime(forNodeTime: nodeTime) else {
             return
         }
         let sr = f.processingFormat.sampleRate
-        let elapsed = Double(seekOffsetFrames) / sr + Double(playerTime.sampleTime) / playerTime.sampleRate
+        // stop() 之后 sampleTime 从 0 重新计数，所以 elapsed = seekOffset + sampleTime
+        let sampleSec = max(0, Double(playerTime.sampleTime) / playerTime.sampleRate)
+        let elapsed = Double(seekOffsetFrames) / sr + sampleSec
         currentTime = max(0, min(elapsed, duration))
     }
 

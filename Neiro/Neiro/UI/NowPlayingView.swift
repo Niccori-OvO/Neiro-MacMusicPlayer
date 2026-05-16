@@ -11,6 +11,7 @@ struct NowPlayingView: View {
 
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
+    @State private var seekTargetHoldUntil: Date = .distantPast
 
     var body: some View {
         @Bindable var engine = engine
@@ -152,7 +153,11 @@ struct NowPlayingView: View {
         VStack(spacing: 6) {
             Slider(
                 value: Binding(
-                    get: { isScrubbing ? scrubValue : engine.currentTime },
+                    get: {
+                        if isScrubbing { return scrubValue }
+                        if Date() < seekTargetHoldUntil { return scrubValue }
+                        return engine.currentTime
+                    },
                     set: { newVal in
                         scrubValue = newVal
                         isScrubbing = true
@@ -163,6 +168,7 @@ struct NowPlayingView: View {
                         isScrubbing = true
                     } else {
                         engine.seek(toSeconds: scrubValue)
+                        seekTargetHoldUntil = Date().addingTimeInterval(0.3)
                         isScrubbing = false
                     }
                 }
@@ -170,7 +176,11 @@ struct NowPlayingView: View {
             .disabled(engine.currentURL == nil)
 
             HStack {
-                Text(timeString(isScrubbing ? scrubValue : engine.currentTime))
+                Text(timeString({
+                    if isScrubbing { return scrubValue }
+                    if Date() < seekTargetHoldUntil { return scrubValue }
+                    return engine.currentTime
+                }()))
                 Spacer()
                 Text(timeString(engine.duration))
             }
