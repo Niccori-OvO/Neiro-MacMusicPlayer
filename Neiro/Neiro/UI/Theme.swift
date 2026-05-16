@@ -96,6 +96,9 @@ public enum NeiroTheme {
 
     public static let animationSpeedKey = "NeiroAnimationSpeed"
 
+    /// Home 每日推荐数量（3~12）
+    public static let dailyPicksCountKey = "NeiroDailyPicksCount"
+
     public static let homeSubtitleKey = "NeiroHomeSubtitle"
     public static let defaultHomeSubtitle = "Neiro·音色 - 离线播放器"
 

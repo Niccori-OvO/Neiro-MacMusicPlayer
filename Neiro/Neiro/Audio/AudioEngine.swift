@@ -265,16 +265,18 @@ public final class AudioEngine {
         let clamped = max(0, min(seconds, safeUpperBound))
         let frame = AVAudioFramePosition(clamped * sr)
 
-        // 关键：用 stop() 替代 pause()+reset()。
-        // reset() 只清待播 buffer，不归零 player.sampleTime，
-            // 导致 updateCurrentTime 把旧 sampleTime 加进新位置 → 进度条立刻回弹到错误位置。
-        // stop() 同时清 buffer 并归零 sampleTime。
+        // ===== 关键防御：先 bump generation =====
+        // player.stop() 会异步触发之前 scheduleSegment 的 completion handler。
+        // 如果不先 bump，stale callback 会以"匹配"的 generation 进入 handlePlaybackFinished
+        // → 跳下一首 / state = .idle → 用户看到"回到原来"或"跳走"。
+        scheduleGeneration &+= 1
+
+        // stop() 同时清 buffer 并归零 sampleTime（reset() 不归零，会让 updateCurrentTime 错算）。
         player.stop()
 
-        // 立刻反映新位置，避免 timer 还没来得及更新前 UI 仍显示旧值
+        // 立刻反映新位置 + 屏蔽 timer 一段时间，等 player.play() 后 lastRenderTime 稳定
         currentTime = clamped
-        // 暂时屏蔽 updateCurrentTime 几个 tick，等 player.play() 后 lastRenderTime 重置
-        seekJustHappenedUntil = Date().addingTimeInterval(0.25)
+        seekJustHappenedUntil = Date().addingTimeInterval(0.4)
 
         do {
             try startEngineIfNeeded()
@@ -321,7 +323,11 @@ public final class AudioEngine {
     }
 
     private func handlePlaybackFinished() {
-        // Avoid a synchronous stop on MainActor here to prevent QoS inversions.
+        // 双保险：只有真的播到末尾才算完成。
+        // 如果 callback 来自 seek 触发的 stop()（generation check 漏掉的边缘 case），
+        // 此时 currentTime 通常离 duration 还很远，直接忽略。
+        guard duration > 0, currentTime >= duration - 1.0 else { return }
+
         stopPositionTimer()
         currentTime = duration
 

@@ -168,7 +168,7 @@ struct NowPlayingView: View {
                         isScrubbing = true
                     } else {
                         engine.seek(toSeconds: scrubValue)
-                        seekTargetHoldUntil = Date().addingTimeInterval(0.3)
+                        seekTargetHoldUntil = Date().addingTimeInterval(0.5)
                         isScrubbing = false
                     }
                 }

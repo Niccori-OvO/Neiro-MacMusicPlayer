@@ -12,6 +12,7 @@ struct HomeView: View {
     @Query private var artists: [Artist]
     @AppStorage(NeiroTheme.homeSubtitleKey) private var homeSubtitle: String = NeiroTheme.defaultHomeSubtitle
     @AppStorage(NeiroTheme.languageKey) private var languageRaw: String = NeiroLanguage.chinese.rawValue
+    @AppStorage(NeiroTheme.dailyPicksCountKey) private var dailyPicksCount: Int = 6
     @State private var pickRefreshRound: UInt64 = 0
 
     var body: some View {
@@ -120,7 +121,9 @@ struct HomeView: View {
         guard !tracks.isEmpty else { return [] }
         let weighted = tracks.map { ($0, weight(for: $0)) }
         var generator = SeededGenerator(seed: refreshedSeed())
-        return weightedSample(weighted, count: 6, using: &generator)
+        // 自适应：库小不强求 N 首；库大让用户调
+        let target = max(3, min(dailyPicksCount, tracks.count))
+        return weightedSample(weighted, count: target, using: &generator)
     }
 
     private func refreshedSeed() -> UInt64 {

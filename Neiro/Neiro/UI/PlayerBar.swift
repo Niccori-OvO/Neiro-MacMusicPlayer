@@ -182,7 +182,7 @@ struct InlinePlayerBar: View {
                 } else {
                     // 松开：跳转 + 进入 300ms 保护期，期间 slider 显示 scrubValue 不被 engine.currentTime 覆盖
                     engine.seek(toSeconds: scrubValue)
-                    seekTargetHoldUntil = Date().addingTimeInterval(0.3)
+                    seekTargetHoldUntil = Date().addingTimeInterval(0.5)
                     isScrubbing = false
                 }
             }
